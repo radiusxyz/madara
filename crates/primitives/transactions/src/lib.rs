@@ -13,6 +13,7 @@ pub mod getters;
 #[cfg(feature = "client")]
 pub mod to_starknet_core_transaction;
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use blockifier::execution::contract_class::ContractClass;
@@ -85,6 +86,7 @@ pub enum UserAndL1HandlerTransaction {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, From)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub enum InvokeTransaction {
@@ -93,6 +95,7 @@ pub enum InvokeTransaction {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub struct InvokeTransactionV0 {
@@ -104,6 +107,7 @@ pub struct InvokeTransactionV0 {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
 #[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
 pub struct InvokeTransactionV1 {
@@ -112,6 +116,22 @@ pub struct InvokeTransactionV1 {
     pub nonce: Felt252Wrapper,
     pub sender_address: Felt252Wrapper,
     pub calldata: Vec<Felt252Wrapper>,
+}
+
+/// Encrypted Invoke transaction.
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct EncryptedInvokeTransaction {
+    /// Encrypted transaction data.
+    pub encrypted_data: Vec<String>,
+    /// Nonce for decrypting the encrypted transaction.
+    pub nonce: String,
+    /// t for calculating time-lock puzzle.
+    pub t: u64,
+    /// g for calculating time-lock puzzle.
+    pub g: String,
+    /// n for calculating time-lock puzzle.
+    pub n: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, From)]

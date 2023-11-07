@@ -9,6 +9,7 @@ mod tests;
 
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
+use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -21,6 +22,12 @@ use starknet_core::types::{
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
     InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingTransactionReceipt,
     StateUpdate, SyncStatusType, Transaction,
+};
+
+pub mod types;
+
+use crate::types::{
+    DecryptionInfo, EncryptedInvokeTransactionResult, EncryptedMempoolTransactionResult, ProvideDecryptionKeyResult,
 };
 
 #[serde_as]
@@ -135,4 +142,32 @@ pub trait StarknetRpcApi {
     /// Returns the receipt of a transaction by transaction hash.
     #[method(name = "getTransactionReceipt")]
     fn get_transaction_receipt(&self, transaction_hash: FieldElement) -> RpcResult<MaybePendingTransactionReceipt>;
+
+    // (For testing) Encrypt Invoke Transaction
+    #[method(name = "encryptInvokeTransaction")]
+    fn encrypt_invoke_transaction(
+        &self,
+        invoke_transaction: BroadcastedInvokeTransaction,
+        t: u64,
+    ) -> RpcResult<EncryptedInvokeTransactionResult>;
+
+    // (For testing) Decrypt Encrypted Invoke Transaction
+    #[method(name = "decryptEncryptedInvokeTransaction")]
+    async fn decrypt_encrypted_invoke_transaction(
+        &self,
+        encrypted_invoke_transaction: EncryptedInvokeTransaction,
+        decryption_key: Option<String>,
+    ) -> RpcResult<InvokeTransaction>;
+
+    /// Add an Encrypted Invoke Transaction to invoke a contract function
+    #[method(name = "addEncryptedInvokeTransaction")]
+    async fn add_encrypted_invoke_transaction(
+        &self,
+        encrypted_invoke_transaction: EncryptedInvokeTransaction,
+    ) -> RpcResult<EncryptedMempoolTransactionResult>;
+
+    /// Allow a client to pass the decryption key, after the client received the order_commitment
+    /// from sequencer.
+    #[method(name = "provideDecryptionKey")]
+    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResult>;
 }

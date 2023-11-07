@@ -35,8 +35,10 @@ mod tracked_map;
 mod validated_pool;
 
 pub mod base_pool;
+pub mod encrypted_pool;
 pub mod watcher;
 
+pub use encrypted_pool::{EncryptedPool, Txs};
 pub use validated_pool::{IsValidator, ValidatedTransaction};
 
 pub use self::base_pool::Transaction;

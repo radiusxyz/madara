@@ -30,10 +30,11 @@ use sp_runtime::traits::{self, Block as BlockT, SaturatedConversion};
 use sp_runtime::transaction_validity::{
     TransactionSource, TransactionTag as Tag, TransactionValidity, TransactionValidityError,
 };
+use tokio::sync::Mutex;
 
-use super::base_pool as base;
 use super::validated_pool::{IsValidator, ValidatedPool, ValidatedTransaction};
 use super::watcher::Watcher;
+use super::{base_pool as base, EncryptedPool};
 use crate::LOG_TARGET;
 
 /// Modification notification event stream type;
@@ -112,6 +113,10 @@ pub struct Options {
     pub reject_future_transactions: bool,
     /// How long the extrinsic is banned for.
     pub ban_time: Duration,
+    /// Encrypted Mempool
+    pub encrypted_mempool: bool,
+    /// Using external decryptor in Encrypted Mempool
+    pub using_external_decryptor: bool,
 }
 
 impl Default for Options {
@@ -121,6 +126,8 @@ impl Default for Options {
             future: base::Limit { count: 512, total_bytes: 1024 * 1024 },
             reject_future_transactions: false,
             ban_time: Duration::from_secs(60 * 30),
+            encrypted_mempool: false,
+            using_external_decryptor: false,
         }
     }
 }
@@ -135,6 +142,8 @@ impl From<ScOptions> for Options {
             future: base::Limit::from(opts.future),
             reject_future_transactions: opts.reject_future_transactions,
             ban_time: opts.ban_time,
+            encrypted_mempool: false,
+            using_external_decryptor: false,
         }
     }
 }
@@ -157,12 +166,22 @@ enum CheckBannedBeforeVerify {
 /// Extrinsics pool that performs validation.
 pub struct Pool<B: ChainApi> {
     validated_pool: Arc<ValidatedPool<B>>,
+    encrypted_pool: Arc<Mutex<EncryptedPool>>,
 }
 
 impl<B: ChainApi> Pool<B> {
     /// Create a new transaction pool.
-    pub fn new(options: Options, is_validator: IsValidator, api: Arc<B>) -> Self {
-        Self { validated_pool: Arc::new(ValidatedPool::new(options, is_validator, api)) }
+    pub fn new(
+        options: Options,
+        is_validator: IsValidator,
+        api: Arc<B>,
+        encrypted_mempool: bool,
+        using_external_decryptor: bool,
+    ) -> Self {
+        Self {
+            validated_pool: Arc::new(ValidatedPool::new(options, is_validator, api)),
+            encrypted_pool: Arc::new(Mutex::new(EncryptedPool::new(encrypted_mempool, using_external_decryptor))),
+        }
     }
 
     /// Imports a bunch of unverified extrinsics to the pool
@@ -171,10 +190,14 @@ impl<B: ChainApi> Pool<B> {
         at: &BlockId<B::Block>,
         source: TransactionSource,
         xts: impl IntoIterator<Item = ExtrinsicFor<B>>,
+        order: Option<u64>,
     ) -> Result<Vec<Result<ExtrinsicHash<B>, B::Error>>, B::Error> {
         let xts = xts.into_iter().map(|xt| (source, xt));
         let validated_transactions = self.verify(at, xts, CheckBannedBeforeVerify::Yes).await?;
-        Ok(self.validated_pool.submit(validated_transactions.into_values()))
+        match order {
+            Some(order) => Ok(self.validated_pool.submit(validated_transactions.into_values(), Some(order))),
+            None => Ok(self.validated_pool.submit(validated_transactions.into_values(), None)),
+        }
     }
 
     /// Resubmit the given extrinsics to the pool.
@@ -188,7 +211,7 @@ impl<B: ChainApi> Pool<B> {
     ) -> Result<Vec<Result<ExtrinsicHash<B>, B::Error>>, B::Error> {
         let xts = xts.into_iter().map(|xt| (source, xt));
         let validated_transactions = self.verify(at, xts, CheckBannedBeforeVerify::No).await?;
-        Ok(self.validated_pool.submit(validated_transactions.into_values()))
+        Ok(self.validated_pool.submit(validated_transactions.into_values(), None))
     }
 
     /// Imports one unverified extrinsic to the pool
@@ -197,9 +220,18 @@ impl<B: ChainApi> Pool<B> {
         at: &BlockId<B::Block>,
         source: TransactionSource,
         xt: ExtrinsicFor<B>,
+        order: Option<u64>,
     ) -> Result<ExtrinsicHash<B>, B::Error> {
-        let res = self.submit_at(at, source, std::iter::once(xt)).await?.pop();
-        res.expect("One extrinsic passed; one result returned; qed")
+        match order {
+            Some(order) => {
+                let res = self.submit_at(at, source, std::iter::once(xt), Some(order)).await?.pop();
+                res.expect("One extrinsic passed; one result returned; qed")
+            }
+            None => {
+                let res = self.submit_at(at, source, std::iter::once(xt), None).await?.pop();
+                res.expect("One extrinsic passed; one result returned; qed")
+            }
+        }
     }
 
     /// Import a single extrinsic and starts to watch its progress in the pool.
@@ -431,10 +463,15 @@ impl<B: ChainApi> Pool<B> {
     pub fn validated_pool(&self) -> &ValidatedPool<B> {
         &self.validated_pool
     }
+
+    /// get encrypted pool
+    pub fn encrypted_pool(&self) -> Arc<Mutex<EncryptedPool>> {
+        self.encrypted_pool.clone()
+    }
 }
 
 impl<B: ChainApi> Clone for Pool<B> {
     fn clone(&self) -> Self {
-        Self { validated_pool: self.validated_pool.clone() }
+        Self { validated_pool: self.validated_pool.clone(), encrypted_pool: self.encrypted_pool.clone() }
     }
 }

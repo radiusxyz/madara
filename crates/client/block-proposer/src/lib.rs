@@ -6,17 +6,23 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time;
+use std::time::{Duration, UNIX_EPOCH};
 
 use codec::Encode;
 use futures::channel::oneshot;
 use futures::future::{Future, FutureExt};
 use futures::{future, select};
 use log::{debug, error, info, trace, warn};
+use mc_rpc::submit_extrinsic_with_order;
+use mc_transaction_pool::decryptor::Decryptor;
+use mc_transaction_pool::EncryptedTransactionPool;
+use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction, TxType, UserTransaction};
+use pallet_starknet::runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use prometheus_endpoint::Registry as PrometheusRegistry;
 use sc_block_builder::{BlockBuilderApi, BlockBuilderProvider};
 use sc_client_api::backend;
 use sc_proposer_metrics::{EndProposingReason, MetricsLink as PrometheusMetrics};
-use sc_transaction_pool_api::{InPoolTransaction, TransactionPool};
+use sc_transaction_pool_api::{InPoolTransaction, TransactionPool, TransactionSource};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::ApplyExtrinsicFailed::Validity;
 use sp_blockchain::Error::ApplyExtrinsicFailed;
@@ -24,8 +30,10 @@ use sp_blockchain::HeaderBackend;
 use sp_consensus::{DisableProofRecording, ProofRecording, Proposal};
 use sp_core::traits::SpawnNamed;
 use sp_inherents::InherentData;
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
+use sp_runtime::generic::BlockId as SPBlockId;
+use sp_runtime::traits::{Block as BlockT, Convert, Header as HeaderT};
 use sp_runtime::{Digest, Percent, SaturatedConversion};
+use tokio;
 
 /// Default block size limit in bytes used by [`Proposer`].
 ///
@@ -125,7 +133,7 @@ impl<A, B, C, PR> ProposerFactory<A, B, C, PR> {
 
 impl<B, Block, C, A, PR> ProposerFactory<A, B, C, PR>
 where
-    A: TransactionPool<Block = Block> + 'static,
+    A: EncryptedTransactionPool<Block = Block> + 'static,
     B: backend::Backend<Block> + Send + Sync + 'static,
     Block: BlockT,
     C: BlockBuilderProvider<B, Block, C> + HeaderBackend<Block> + ProvideRuntimeApi<Block> + Send + Sync + 'static,
@@ -159,11 +167,14 @@ where
 
 impl<A, B, Block, C, PR> sp_consensus::Environment<Block> for ProposerFactory<A, B, C, PR>
 where
-    A: TransactionPool<Block = Block> + 'static,
+    A: EncryptedTransactionPool<Block = Block> + 'static,
     B: backend::Backend<Block> + Send + Sync + 'static,
     Block: BlockT,
     C: BlockBuilderProvider<B, Block, C> + HeaderBackend<Block> + ProvideRuntimeApi<Block> + Send + Sync + 'static,
-    C::Api: ApiExt<Block, StateBackend = backend::StateBackendFor<B, Block>> + BlockBuilderApi<Block>,
+    C::Api: ApiExt<Block, StateBackend = backend::StateBackendFor<B, Block>>
+        + BlockBuilderApi<Block>
+        + StarknetRuntimeApi<Block>
+        + ConvertTransactionRuntimeApi<Block>,
     PR: ProofRecording,
 {
     type CreateProposer = future::Ready<Result<Self::Proposer, Self::Error>>;
@@ -176,7 +187,7 @@ where
 }
 
 /// The proposer logic.
-pub struct Proposer<B, Block: BlockT, C, A: TransactionPool, PR> {
+pub struct Proposer<B, Block: BlockT, C, A: EncryptedTransactionPool, PR> {
     spawn_handle: Box<dyn SpawnNamed>,
     client: Arc<C>,
     parent_hash: Block::Hash,
@@ -191,11 +202,14 @@ pub struct Proposer<B, Block: BlockT, C, A: TransactionPool, PR> {
 
 impl<A, B, Block, C, PR> sp_consensus::Proposer<Block> for Proposer<B, Block, C, A, PR>
 where
-    A: TransactionPool<Block = Block> + 'static,
+    A: EncryptedTransactionPool<Block = Block> + 'static,
     B: backend::Backend<Block> + Send + Sync + 'static,
     Block: BlockT,
     C: BlockBuilderProvider<B, Block, C> + HeaderBackend<Block> + ProvideRuntimeApi<Block> + Send + Sync + 'static,
-    C::Api: ApiExt<Block, StateBackend = backend::StateBackendFor<B, Block>> + BlockBuilderApi<Block>,
+    C::Api: ApiExt<Block, StateBackend = backend::StateBackendFor<B, Block>>
+        + BlockBuilderApi<Block>
+        + StarknetRuntimeApi<Block>
+        + ConvertTransactionRuntimeApi<Block>,
     PR: ProofRecording,
 {
     type Transaction = backend::TransactionFor<B, Block>;
@@ -242,11 +256,13 @@ const MAX_SKIPPED_TRANSACTIONS: usize = 8;
 
 impl<A, B, Block, C, PR> Proposer<B, Block, C, A, PR>
 where
-    A: TransactionPool<Block = Block>,
+    A: EncryptedTransactionPool<Block = Block> + 'static,
     B: backend::Backend<Block> + Send + Sync + 'static,
     Block: BlockT,
     C: BlockBuilderProvider<B, Block, C> + HeaderBackend<Block> + ProvideRuntimeApi<Block> + Send + Sync + 'static,
-    C::Api: ApiExt<Block, StateBackend = backend::StateBackendFor<B, Block>> + BlockBuilderApi<Block>,
+    C::Api: ApiExt<Block, StateBackend = backend::StateBackendFor<B, Block>>
+        + BlockBuilderApi<Block>
+        + ConvertTransactionRuntimeApi<Block>,
     PR: ProofRecording,
 {
     /// Propose a new block.
@@ -380,6 +396,180 @@ where
         deadline: time::Instant,
         block_size_limit: Option<usize>,
     ) -> Result<EndProposingReason, sp_blockchain::Error> {
+        let epool = self.transaction_pool.encrypted_pool().clone();
+        let block_height = self.parent_number.to_string().parse::<u64>().unwrap() + 1;
+
+        let enabled = {
+            let lock = epool.lock().await;
+            lock.is_enabled()
+        };
+
+        let using_external_decryptor = {
+            let lock = epool.lock().await;
+            lock.is_using_external_decryptor()
+        };
+
+        let closed = {
+            let mut lock = epool.lock().await;
+            let exist = lock.exist(block_height);
+            if exist {
+                // lock.get_txs(block_height).unwrap().is_closed()
+                lock.txs.get_mut(&block_height).unwrap().is_closed()
+            } else {
+                lock.initialize_if_not_exist(block_height);
+                println!("log1");
+                let len = lock.txs.get(&block_height).unwrap().len();
+                // let len = lock.get_txs(block_height).unwrap().len();
+                println!("{}", len);
+                false
+            }
+        };
+
+        if enabled && !closed {
+            // add temporary pool tx to pool
+            let mut temporary_pool: Vec<(u64, UserTransaction)> = vec![];
+            {
+                let mut lock = epool.lock().await;
+                println!("close on {}", block_height);
+                let txs = lock.txs.get_mut(&block_height).unwrap();
+                // let mut txs = lock.get_txs(block_height).unwrap();
+
+                let tx_cnt = txs.get_tx_cnt();
+                let dec_cnt = txs.get_decrypted_cnt();
+                println!("test1: {}:{}", tx_cnt, dec_cnt);
+
+                temporary_pool = txs.get_temporary_pool();
+            }
+
+            {
+                let mut lock = epool.lock().await;
+
+                let _ = lock.close(block_height);
+            }
+
+            let best_block_hash = self.client.info().best_hash;
+            for (order, transaction) in temporary_pool {
+                let extrinsic = self
+                    .client
+                    .runtime_api()
+                    .convert_transaction(best_block_hash, transaction)
+                    .expect("convert_transaction")
+                    .expect("runtime_api");
+                let _ = self
+                    .transaction_pool
+                    .clone()
+                    .submit_one_with_order(
+                        &SPBlockId::hash(best_block_hash),
+                        TransactionSource::External,
+                        extrinsic,
+                        order,
+                    )
+                    .await;
+            }
+
+            let cnt = {
+                let lock = epool.lock().await;
+
+                lock.txs.get(&block_height).unwrap().len() as u64
+                // lock.get_txs(block_height).unwrap().len() as u64
+            };
+
+            let start = std::time::SystemTime::now();
+            let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
+            println!("Decrypt Start in {:?}", since_the_epoch);
+
+            for order in 0..cnt {
+                let block_height = self.parent_number.to_string().parse::<u64>().unwrap() + 1;
+                let best_block_hash = self.client.info().best_hash;
+                let client = self.client.clone();
+                let pool = self.transaction_pool.clone();
+                let epool = self.transaction_pool.encrypted_pool().clone();
+                self.spawn_handle.spawn_blocking(
+                    "Decryptor",
+                    None,
+                    Box::pin(
+                        // tokio::task::spawn(
+                        async move {
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+
+                            let encrypted_invoke_transaction: EncryptedInvokeTransaction;
+                            {
+                                let lock = epool.lock().await;
+                                let txs = lock.txs.get(&block_height).expect("expect get txs");
+                                // let txs = lock.get_txs(block_height).unwrap();
+                                // println!("check key_received on block_height {} order {}", block_height, order);
+                                let did_received_key = txs.get_key_received(order);
+
+                                if did_received_key == true {
+                                    println!("Received key");
+                                    return;
+                                }
+                                println!("Not received key");
+                                encrypted_invoke_transaction = txs.get(order).unwrap().clone();
+                            }
+
+                            let decryptor = Decryptor::new();
+                            let invoke_tx: InvokeTransaction = if using_external_decryptor {
+                                decryptor
+                                    .delegate_to_decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction)
+                                    .await
+                            } else {
+                                decryptor.decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, None).await
+                            };
+                            // println!("decrypt done on block_height {} order {}", block_height, order);
+
+                            {
+                                let mut lock = epool.lock().await;
+                                // println!("check key_received on block_height {} order {}", block_height, order);
+                                let did_received_key = lock.txs.get(&block_height).unwrap().get_key_received(order);
+                                // let did_received_key = lock.get_txs(block_height).unwrap().get_key_received(order);
+
+                                if did_received_key == true {
+                                    println!("Received key");
+                                    return;
+                                }
+
+                                lock.txs.get_mut(&block_height).unwrap().increase_decrypted_cnt();
+                                // lock.get_txs(block_height).unwrap().clone().
+                                // increase_decrypted_cnt();
+                            }
+
+                            let end = std::time::SystemTime::now();
+                            let since_the_epoch = end.duration_since(UNIX_EPOCH).expect("Time went backwards");
+                            println!("Decrypt {} End in {:?}", order, since_the_epoch);
+
+                            let transaction: UserTransaction = UserTransaction::Invoke(invoke_tx.clone());
+                            let extrinsic = client
+                                .runtime_api()
+                                .convert_transaction(best_block_hash, transaction.clone())
+                                .unwrap()
+                                .expect("Failed to submit extrinsic");
+
+                            submit_extrinsic_with_order(pool, best_block_hash, extrinsic, order)
+                                .await
+                                .expect("Failed to submit extrinsic");
+                        },
+                    ),
+                )
+            }
+        }
+
+        if enabled {
+            {
+                let lock = epool.lock().await;
+                if lock.exist(block_height) {
+                    let txs = lock.txs.get(&block_height).expect("expect get txs");
+                    // let txs = lock.get_txs(block_height).unwrap();
+                    let tx_cnt = txs.get_tx_cnt();
+                    let dec_cnt = txs.get_decrypted_cnt();
+                    let ready_cnt = self.transaction_pool.status().ready as u64;
+                    println!("{} waiting {}:{}:{}", block_height, tx_cnt, dec_cnt, ready_cnt);
+                    if !(tx_cnt == dec_cnt && dec_cnt == ready_cnt) {
+                        return Err(sp_blockchain::Error::TransactionPoolNotReady);
+                    }
+                }
+            }
+        }
         // proceed with transactions
         // We calculate soft deadline used only in case we start skipping transactions.
         let now = (self.now)();
@@ -410,6 +600,28 @@ where
         debug!(target: LOG_TARGET, "Pool status: {:?}", self.transaction_pool.status());
         let mut transaction_pushed = false;
 
+        // {
+        //     let lock = epool.lock().await;
+        //     if lock.is_enabled() {
+        //         let block_height = self.parent_number.to_string().parse::<u64>().unwrap() + 1;
+        //          let encrypted_tx_pool_size: usize = lock.len(block_height);
+
+        //         if encrypted_tx_pool_size > 0 {
+        //             let encrypted_invoke_transactions = lock.get_encrypted_tx_pool(block_height);
+
+        //             let data_for_da: String =
+        // serde_json::to_string(&encrypted_invoke_transactions).unwrap();             //
+        // println!("this is the : {:?}", data_for_da);             let encoded_data_for_da =
+        // encode_data_to_base64(&data_for_da);             // println!("this is the
+        // encoded_data_for_da: {:?}", encoded_data_for_da);
+        // submit_to_da(&encoded_data_for_da);             // let da_block_height =
+        // submit_to_da(&encoded_data_for_da).await;             // println!("this is the
+        // block_height: {}", da_block_height);         }
+        //         // lock.init_tx_pool(block_height);
+        //     }
+        // }
+
+        // input pool data to DA
         let end_reason = loop {
             let pending_tx = if let Some(pending_tx) = pending_iterator.next() {
                 pending_tx
@@ -541,7 +753,6 @@ where
 mod tests {
 
     use futures::executor::block_on;
-    use parking_lot::Mutex;
     use sc_client_api::Backend;
     use sc_transaction_pool::BasicPool;
     use sc_transaction_pool_api::{ChainEvent, MaintainedTransactionPool, TransactionSource};
@@ -554,6 +765,7 @@ mod tests {
     use substrate_test_runtime_client::prelude::*;
     use substrate_test_runtime_client::runtime::{Block as TestBlock, Extrinsic, ExtrinsicBuilder, Transfer};
     use substrate_test_runtime_client::{TestClientBuilder, TestClientBuilderExt};
+    use tokio::sync::Mutex;
 
     use super::*;
 

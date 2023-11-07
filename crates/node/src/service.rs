@@ -13,6 +13,7 @@ use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_block_proposer::ProposerFactory;
 use mc_commitment_state_diff::{log_commitment_state_diff, CommitmentStateDiffWorker};
+use mc_config::config_map;
 use mc_data_availability::avail::config::AvailConfig;
 use mc_data_availability::avail::AvailClient;
 use mc_data_availability::celestia::config::CelestiaConfig;
@@ -22,6 +23,7 @@ use mc_data_availability::ethereum::EthereumClient;
 use mc_data_availability::{DaClient, DaLayer, DataAvailabilityWorker};
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
+use mc_sync_block::sync_with_da;
 use mc_transaction_pool::FullPool;
 use mp_sequencer_address::{
     InherentDataProvider as SeqAddrInherentDataProvider, DEFAULT_SEQUENCER_ADDRESS, SEQ_ADDR_STORAGE_KEY,
@@ -42,6 +44,8 @@ use sp_offchain::STORAGE_PREFIX;
 use sp_runtime::traits::BlakeTwo256;
 use sp_trie::PrefixedMemoryDB;
 
+use crate::cli::Cli;
+use crate::commands::Sealing;
 use crate::genesis_block::MadaraGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
 use crate::starknet::{db_config_dir, MadaraBackend};
@@ -75,6 +79,7 @@ type BoxBlockImport<Client> = sc_consensus::BoxBlockImport<Block, TransactionFor
 #[allow(clippy::type_complexity)]
 pub fn new_partial<BIQ>(
     config: &Configuration,
+    cli: &Cli,
     build_import_queue: BIQ,
     cache_more_things: bool,
 ) -> Result<
@@ -156,6 +161,8 @@ where
         config.prometheus_registry(),
         task_manager.spawn_essential_handle(),
         client.clone(),
+        cli.run.encrypted_mempool,
+        cli.run.using_external_decryptor,
     );
 
     let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
@@ -259,10 +266,14 @@ where
 /// - `cache`: whether more information should be cached when storing the block in the database.
 pub fn new_full(
     config: Configuration,
-    sealing: SealingMode,
+    cli: Cli,
     da_layer: Option<(DaLayer, PathBuf)>,
     cache_more_things: bool,
 ) -> Result<TaskManager, ServiceError> {
+    let sealing: SealingMode = match cli.run.sealing {
+        Some(sealing) => sealing.into(),
+        None => SealingMode::Default,
+    };
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
 
@@ -275,7 +286,11 @@ pub fn new_full(
         select_chain,
         transaction_pool,
         other: (block_import, grandpa_link, mut telemetry, madara_backend),
-    } = new_partial(&config, build_import_queue, cache_more_things)?;
+    } = new_partial(&config, &cli, build_import_queue, cache_more_things)?;
+    let config_map = config_map();
+    if config_map.get_bool("is_validating").unwrap() == true {
+        task_manager.spawn_essential_handle().spawn("sync-DA", Some("sync-DA"), sync_with_da());
+    }
 
     let mut net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
@@ -455,7 +470,7 @@ pub fn new_full(
         let proposer_factory = ProposerFactory::new(
             task_manager.spawn_handle(),
             client.clone(),
-            transaction_pool,
+            transaction_pool.clone(),
             prometheus_registry.as_ref(),
         );
 
@@ -659,9 +674,9 @@ type ChainOpsResult = Result<
     ServiceError,
 >;
 
-pub fn new_chain_ops(config: &mut Configuration, cache_more_things: bool) -> ChainOpsResult {
+pub fn new_chain_ops(config: &mut Configuration, cli: &Cli, cache_more_things: bool) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
-        new_partial::<_>(config, build_aura_grandpa_import_queue, cache_more_things)?;
+        new_partial::<_>(config, cli, build_aura_grandpa_import_queue, cache_more_things)?;
     Ok((client, backend, import_queue, task_manager, other.3))
 }

@@ -174,11 +174,23 @@ impl<Hash: hash::Hash + Member + Serialize, Ex> ReadyTransactions<Hash, Ex> {
     /// The transaction needs to have all tags satisfied (be ready) by transactions
     /// that are in this queue.
     /// Returns transactions that were replaced by the one imported.
-    pub fn import(&mut self, tx: WaitingTransaction<Hash, Ex>) -> error::Result<Vec<Arc<Transaction<Hash, Ex>>>> {
+    pub fn import(
+        &mut self,
+        tx: WaitingTransaction<Hash, Ex>,
+        order: Option<u64>,
+    ) -> error::Result<Vec<Arc<Transaction<Hash, Ex>>>> {
         assert!(tx.is_ready(), "Only ready transactions can be imported. Missing: {:?}", tx.missing_tags);
         assert!(!self.ready.read().contains_key(&tx.transaction.hash), "Transaction is already imported.");
 
-        self.insertion_id += 1;
+        let insertion_id: u64;
+        match order {
+            Some(order) => insertion_id = order,
+            None => {
+                self.insertion_id += 1;
+                insertion_id = self.insertion_id;
+            }
+        }
+
         let insertion_id = self.insertion_id;
         let hash = tx.transaction.hash.clone();
         let transaction = tx.transaction;
@@ -570,7 +582,7 @@ mod tests {
         tx: Transaction<H, Ex>,
     ) -> error::Result<Vec<Arc<Transaction<H, Ex>>>> {
         let x = WaitingTransaction::new(tx, ready.provided_tags(), &[]);
-        ready.import(x)
+        ready.import(x, None)
     }
 
     #[test]

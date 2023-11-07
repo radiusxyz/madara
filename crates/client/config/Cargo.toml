@@ -1,0 +1,17 @@
+[package]
+name = "mc-config"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+config = "0.13.3"
+lazy_static = "1.4.0"
+serde = { workspace = true, default-features = false, features=["derive"] }
+serde_json = { workspace = true, features = ["std"] }
+toml = "0.8.2"
+sc-cli = { workspace = true }

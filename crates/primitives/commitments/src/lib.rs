@@ -3,7 +3,7 @@
 #[doc(hidden)]
 pub extern crate alloc;
 
-mod merkle_patricia_tree;
+pub mod merkle_patricia_tree;
 
 use alloc::vec::Vec;
 

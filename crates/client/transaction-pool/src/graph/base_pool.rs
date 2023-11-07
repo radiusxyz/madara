@@ -259,7 +259,7 @@ impl<Hash: hash::Hash + Member + Serialize, Ex: std::fmt::Debug> BasePool<Hash, 
     /// other transactions in the pool.
     /// The latter contains transactions that have all the requirements satisfied and are
     /// ready to be included in the block.
-    pub fn import(&mut self, tx: Transaction<Hash, Ex>) -> error::Result<Imported<Hash, Ex>> {
+    pub fn import(&mut self, tx: Transaction<Hash, Ex>, order: Option<u64>) -> error::Result<Imported<Hash, Ex>> {
         if self.is_imported(&tx.hash) {
             return Err(error::Error::AlreadyImported(Box::new(tx.hash)));
         }
@@ -284,13 +284,17 @@ impl<Hash: hash::Hash + Member + Serialize, Ex: std::fmt::Debug> BasePool<Hash, 
             return Ok(Imported::Future { hash });
         }
 
-        self.import_to_ready(tx)
+        self.import_to_ready(tx, order)
     }
 
     /// Imports transaction to ready queue.
     ///
     /// NOTE the transaction has to have all requirements satisfied.
-    fn import_to_ready(&mut self, tx: WaitingTransaction<Hash, Ex>) -> error::Result<Imported<Hash, Ex>> {
+    fn import_to_ready(
+        &mut self,
+        tx: WaitingTransaction<Hash, Ex>,
+        order: Option<u64>,
+    ) -> error::Result<Imported<Hash, Ex>> {
         let hash = tx.transaction.hash.clone();
         let mut promoted = vec![];
         let mut failed = vec![];
@@ -306,7 +310,7 @@ impl<Hash: hash::Hash + Member + Serialize, Ex: std::fmt::Debug> BasePool<Hash, 
 
             // import this transaction
             let current_hash = tx.transaction.hash.clone();
-            match self.ready.import(tx) {
+            match self.ready.import(tx, order) {
                 Ok(mut replaced) => {
                     if !first {
                         promoted.push(current_hash);
@@ -475,7 +479,7 @@ impl<Hash: hash::Hash + Member + Serialize, Ex: std::fmt::Debug> BasePool<Hash, 
         let mut failed = vec![];
         for tx in to_import {
             let hash = tx.transaction.hash.clone();
-            match self.import_to_ready(tx) {
+            match self.import_to_ready(tx, None) {
                 Ok(res) => promoted.push(res),
                 Err(e) => {
                     warn!(target: LOG_TARGET, "[{:?}] Failed to promote during pruning: {:?}", hash, e,);

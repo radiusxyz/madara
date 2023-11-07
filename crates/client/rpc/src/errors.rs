@@ -45,6 +45,10 @@ pub enum StarknetRpcApiError {
     InternalServerError = 500,
     #[error("Unimplemented method")]
     UnimplementedMethod = 501,
+    #[error("Encrypted Mempool enabled")]
+    EncryptedMempoolEnabled = 600,
+    #[error("Encrypted Mempool disabled")]
+    EncryptedMempoolDisabled = 601,
     #[error("Too many storage keys requested")]
     ProofLimitExceeded = 10000,
 }

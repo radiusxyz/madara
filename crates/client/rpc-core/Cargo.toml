@@ -40,6 +40,9 @@ sp-api = { workspace = true, default-features = true }
 sp-blockchain = { workspace = true, default-features = true }
 sp-core = { workspace = true }
 sp-runtime = { workspace = true, default-features = true }
+mc-transaction-pool = { workspace = true }
+mp-transactions = { workspace = true, features = ["serde"] }
+mp-felt = { workspace = true }
 starknet-core = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 thiserror = { workspace = true }

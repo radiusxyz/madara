@@ -35,6 +35,27 @@ sp-tracing = { workspace = true }
 sp-transaction-pool = { workspace = true }
 thiserror = { workspace = true }
 
+mp-transactions = { workspace = true, features = ["serde"] }
+
+serde_json = { workspace = true, default-features = true }
+encryptor = { workspace = true }
+vdf = { workspace = true }
+starknet-crypto = { workspace = true, default-features = false, features = [
+	"alloc",
+] }
+tokio = { workspace = true }
+mc-config = { workspace = true }
+mc-sync-block = { workspace = true }
+bincode = { workspace = true }
+jsonrpsee = { version = "0.20", features = [
+	"server",
+	"http-client",
+	"ws-client",
+	"macros",
+	"client-ws-transport-native-tls",
+] }
+
+
 [dev-dependencies]
 substrate-test-runtime = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.43" }
 substrate-test-runtime-client = { workspace = true }

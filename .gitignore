@@ -15,10 +15,16 @@
 # direnv cache
 .direnv
 
+# dotenv
+.env
+
 # Javascript dependencies
 **/node_modules/
 
 data
+
+# epool db
+epool
 
 # Artillery reports
 benchmarking/reports/*.json
