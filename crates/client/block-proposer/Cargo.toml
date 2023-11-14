@@ -35,9 +35,11 @@ sp-runtime = { workspace = true }
 parking_lot = { workspace = true }
 mc-transaction-pool = { workspace = true }
 serde_json = { workspace = true }
+serde = { workspace = true }
 pallet-starknet = { workspace = true, default-features = true }
+starknet-ff = { workspace = true, features = ["alloc"] }
 mc-rpc = { workspace = true }
-mp-felt = { workspace = true }
+mp-felt = { workspace = true, features = ["serde"] }
 mp-transactions = { workspace = true }
 madara-runtime = { workspace = true }
 hyper = { workspace = true }

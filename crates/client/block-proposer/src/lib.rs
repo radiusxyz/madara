@@ -6,23 +6,24 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time;
-use std::time::{Duration, UNIX_EPOCH};
 
 use codec::Encode;
 use futures::channel::oneshot;
 use futures::future::{Future, FutureExt};
 use futures::{future, select};
+use hyper::{Body, Client, Request, Uri};
 use log::{debug, error, info, trace, warn};
-use mc_rpc::submit_extrinsic_with_order;
-use mc_transaction_pool::decryptor::Decryptor;
 use mc_transaction_pool::EncryptedTransactionPool;
-use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction, TxType, UserTransaction};
+use mp_felt::Felt252Wrapper;
+use mp_transactions::{InvokeTransaction, InvokeTransactionV1, UserTransaction};
 use pallet_starknet::runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use prometheus_endpoint::Registry as PrometheusRegistry;
 use sc_block_builder::{BlockBuilderApi, BlockBuilderProvider};
 use sc_client_api::backend;
 use sc_proposer_metrics::{EndProposingReason, MetricsLink as PrometheusMetrics};
-use sc_transaction_pool_api::{InPoolTransaction, TransactionPool, TransactionSource};
+use sc_transaction_pool_api::{InPoolTransaction, TransactionSource};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::ApplyExtrinsicFailed::Validity;
 use sp_blockchain::Error::ApplyExtrinsicFailed;
@@ -31,9 +32,46 @@ use sp_consensus::{DisableProofRecording, ProofRecording, Proposal};
 use sp_core::traits::SpawnNamed;
 use sp_inherents::InherentData;
 use sp_runtime::generic::BlockId as SPBlockId;
-use sp_runtime::traits::{Block as BlockT, Convert, Header as HeaderT};
+use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use sp_runtime::{Digest, Percent, SaturatedConversion};
+use starknet_ff::FieldElement;
 use tokio;
+
+#[derive(Serialize, Deserialize, Debug)]
+struct JsonRequest {
+    jsonrpc: &'static str,
+    method: &'static str,
+    params: Value,
+    id: i32,
+}
+
+#[derive(Deserialize, Debug)]
+struct JsonResponse {
+    result: Vec<String>,
+    id: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct InvokeTransactionV360 {
+    /// The maximal fee that can be charged for including the transaction
+    // #[serde(rename = "type")]
+    // pub kind: String,
+    // pub version: FieldElement,
+    pub max_fee: FieldElement,
+    /// Signature
+    pub signature: Vec<FieldElement>,
+    /// Nonce
+    pub nonce: FieldElement,
+    pub sender_address: FieldElement,
+    /// The data expected by the account's `execute` function (in most usecases, this includes the
+    /// called contract address and a function selector)
+    pub calldata: Vec<FieldElement>,
+}
+
+// #[derive(Debug, Clone, Deserialize)]
+// pub struct InvokeTransactionType {
+//     pub invoke_transaction: InvokeTransactionV360,
+// }
 
 /// Default block size limit in bytes used by [`Proposer`].
 ///
@@ -396,180 +434,82 @@ where
         deadline: time::Instant,
         block_size_limit: Option<usize>,
     ) -> Result<EndProposingReason, sp_blockchain::Error> {
-        let epool = self.transaction_pool.encrypted_pool().clone();
-        let block_height = self.parent_number.to_string().parse::<u64>().unwrap() + 1;
+        // let epool = self.transaction_pool.encrypted_pool().clone();
+        let block_height = self.parent_number.to_string().parse::<u64>().unwrap();
 
-        let enabled = {
-            let lock = epool.lock().await;
-            lock.is_enabled()
+        let client = Client::new();
+
+        // prepare JSON-RPC request
+        let request = JsonRequest {
+            jsonrpc: "2.0",
+            method: "get_tx_list",
+            params: json!({"rollup_id":"Rollup_0", "block_height":block_height}),
+            id: 1,
         };
 
-        let using_external_decryptor = {
-            let lock = epool.lock().await;
-            lock.is_using_external_decryptor()
-        };
+        let request_str = serde_json::to_string(&request).unwrap();
 
-        let closed = {
-            let mut lock = epool.lock().await;
-            let exist = lock.exist(block_height);
-            if exist {
-                // lock.get_txs(block_height).unwrap().is_closed()
-                lock.txs.get_mut(&block_height).unwrap().is_closed()
-            } else {
-                lock.initialize_if_not_exist(block_height);
-                println!("log1");
-                let len = lock.txs.get(&block_height).unwrap().len();
-                // let len = lock.get_txs(block_height).unwrap().len();
-                println!("{}", len);
-                false
+        // set server uri
+        let uri = Uri::from_static("http://192.168.12.130:3001");
+
+        // create JSON-RPC request
+        let request = Request::post(uri)
+            .header("content-type", "application/json")
+            .body(Body::from(request_str.clone()))
+            .unwrap();
+
+        // send request, receive response
+        let response = client.request(request).await.unwrap();
+        let response_body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        // parse response to JSON
+        let response: JsonResponse = match serde_json::from_slice(&response_body) {
+            Ok(body) => body,
+            Err(_) => {
+                return Err(sp_blockchain::Error::TransactionPoolNotReady);
             }
         };
 
-        if enabled && !closed {
-            // add temporary pool tx to pool
-            let mut temporary_pool: Vec<(u64, UserTransaction)> = vec![];
-            {
-                let mut lock = epool.lock().await;
-                println!("close on {}", block_height);
-                let txs = lock.txs.get_mut(&block_height).unwrap();
-                // let mut txs = lock.get_txs(block_height).unwrap();
+        // print result
+        for serialized_tx in &response.result {
+            let invoke_transaction_type: InvokeTransactionV360 = serde_json::from_str(&serialized_tx).unwrap();
 
-                let tx_cnt = txs.get_tx_cnt();
-                let dec_cnt = txs.get_decrypted_cnt();
-                println!("test1: {}:{}", tx_cnt, dec_cnt);
+            let invoke_tx_v1 = InvokeTransactionV1 {
+                max_fee: invoke_transaction_type.max_fee.to_string().parse().unwrap(),
+                signature: invoke_transaction_type.signature.into_iter().map(|a| Felt252Wrapper(a)).collect(),
+                nonce: Felt252Wrapper(invoke_transaction_type.nonce),
+                sender_address: Felt252Wrapper(invoke_transaction_type.sender_address),
+                calldata: invoke_transaction_type.calldata.into_iter().map(|a| Felt252Wrapper(a)).collect(),
+            };
+            let transaction: UserTransaction = UserTransaction::Invoke(InvokeTransaction::V1(invoke_tx_v1));
 
-                temporary_pool = txs.get_temporary_pool();
-            }
-
-            {
-                let mut lock = epool.lock().await;
-
-                let _ = lock.close(block_height);
-            }
+            let order = 0;
 
             let best_block_hash = self.client.info().best_hash;
-            for (order, transaction) in temporary_pool {
-                let extrinsic = self
-                    .client
-                    .runtime_api()
-                    .convert_transaction(best_block_hash, transaction)
-                    .expect("convert_transaction")
-                    .expect("runtime_api");
-                let _ = self
-                    .transaction_pool
-                    .clone()
-                    .submit_one_with_order(
-                        &SPBlockId::hash(best_block_hash),
-                        TransactionSource::External,
-                        extrinsic,
-                        order,
-                    )
-                    .await;
-            }
 
-            let cnt = {
-                let lock = epool.lock().await;
-
-                lock.txs.get(&block_height).unwrap().len() as u64
-                // lock.get_txs(block_height).unwrap().len() as u64
-            };
-
-            let start = std::time::SystemTime::now();
-            let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
-            println!("Decrypt Start in {:?}", since_the_epoch);
-
-            for order in 0..cnt {
-                let block_height = self.parent_number.to_string().parse::<u64>().unwrap() + 1;
-                let best_block_hash = self.client.info().best_hash;
-                let client = self.client.clone();
-                let pool = self.transaction_pool.clone();
-                let epool = self.transaction_pool.encrypted_pool().clone();
-                self.spawn_handle.spawn_blocking(
-                    "Decryptor",
-                    None,
-                    Box::pin(
-                        // tokio::task::spawn(
-                        async move {
-                            tokio::time::sleep(Duration::from_secs(1)).await;
-
-                            let encrypted_invoke_transaction: EncryptedInvokeTransaction;
-                            {
-                                let lock = epool.lock().await;
-                                let txs = lock.txs.get(&block_height).expect("expect get txs");
-                                // let txs = lock.get_txs(block_height).unwrap();
-                                // println!("check key_received on block_height {} order {}", block_height, order);
-                                let did_received_key = txs.get_key_received(order);
-
-                                if did_received_key == true {
-                                    println!("Received key");
-                                    return;
-                                }
-                                println!("Not received key");
-                                encrypted_invoke_transaction = txs.get(order).unwrap().clone();
-                            }
-
-                            let decryptor = Decryptor::new();
-                            let invoke_tx: InvokeTransaction = if using_external_decryptor {
-                                decryptor
-                                    .delegate_to_decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction)
-                                    .await
-                            } else {
-                                decryptor.decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, None).await
-                            };
-                            // println!("decrypt done on block_height {} order {}", block_height, order);
-
-                            {
-                                let mut lock = epool.lock().await;
-                                // println!("check key_received on block_height {} order {}", block_height, order);
-                                let did_received_key = lock.txs.get(&block_height).unwrap().get_key_received(order);
-                                // let did_received_key = lock.get_txs(block_height).unwrap().get_key_received(order);
-
-                                if did_received_key == true {
-                                    println!("Received key");
-                                    return;
-                                }
-
-                                lock.txs.get_mut(&block_height).unwrap().increase_decrypted_cnt();
-                                // lock.get_txs(block_height).unwrap().clone().
-                                // increase_decrypted_cnt();
-                            }
-
-                            let end = std::time::SystemTime::now();
-                            let since_the_epoch = end.duration_since(UNIX_EPOCH).expect("Time went backwards");
-                            println!("Decrypt {} End in {:?}", order, since_the_epoch);
-
-                            let transaction: UserTransaction = UserTransaction::Invoke(invoke_tx.clone());
-                            let extrinsic = client
-                                .runtime_api()
-                                .convert_transaction(best_block_hash, transaction.clone())
-                                .unwrap()
-                                .expect("Failed to submit extrinsic");
-
-                            submit_extrinsic_with_order(pool, best_block_hash, extrinsic, order)
-                                .await
-                                .expect("Failed to submit extrinsic");
-                        },
-                    ),
-                )
-            }
+            let extrinsic = self
+                .client
+                .runtime_api()
+                .convert_transaction(best_block_hash, transaction)
+                .expect("convert_transaction")
+                .expect("runtime_api");
+            let _ = self
+                .transaction_pool
+                .clone()
+                .submit_one_with_order(&SPBlockId::hash(best_block_hash), TransactionSource::External, extrinsic, order)
+                .await;
         }
 
-        if enabled {
-            {
-                let lock = epool.lock().await;
-                if lock.exist(block_height) {
-                    let txs = lock.txs.get(&block_height).expect("expect get txs");
-                    // let txs = lock.get_txs(block_height).unwrap();
-                    let tx_cnt = txs.get_tx_cnt();
-                    let dec_cnt = txs.get_decrypted_cnt();
-                    let ready_cnt = self.transaction_pool.status().ready as u64;
-                    println!("{} waiting {}:{}:{}", block_height, tx_cnt, dec_cnt, ready_cnt);
-                    if !(tx_cnt == dec_cnt && dec_cnt == ready_cnt) {
-                        return Err(sp_blockchain::Error::TransactionPoolNotReady);
-                    }
-                }
+        loop {
+            let tx_cnt = response.result.len();
+            let ready_cnt = self.transaction_pool.status().ready as usize;
+            info!("{} waiting {}:{}", block_height, tx_cnt, ready_cnt);
+
+            if tx_cnt == ready_cnt {
+                break;
             }
+            tokio::time::sleep(time::Duration::from_millis(50)).await;
         }
+
         // proceed with transactions
         // We calculate soft deadline used only in case we start skipping transactions.
         let now = (self.now)();
@@ -599,27 +539,6 @@ where
         debug!(target: LOG_TARGET, "Attempting to push transactions from the pool.");
         debug!(target: LOG_TARGET, "Pool status: {:?}", self.transaction_pool.status());
         let mut transaction_pushed = false;
-
-        // {
-        //     let lock = epool.lock().await;
-        //     if lock.is_enabled() {
-        //         let block_height = self.parent_number.to_string().parse::<u64>().unwrap() + 1;
-        //          let encrypted_tx_pool_size: usize = lock.len(block_height);
-
-        //         if encrypted_tx_pool_size > 0 {
-        //             let encrypted_invoke_transactions = lock.get_encrypted_tx_pool(block_height);
-
-        //             let data_for_da: String =
-        // serde_json::to_string(&encrypted_invoke_transactions).unwrap();             //
-        // println!("this is the : {:?}", data_for_da);             let encoded_data_for_da =
-        // encode_data_to_base64(&data_for_da);             // println!("this is the
-        // encoded_data_for_da: {:?}", encoded_data_for_da);
-        // submit_to_da(&encoded_data_for_da);             // let da_block_height =
-        // submit_to_da(&encoded_data_for_da).await;             // println!("this is the
-        // block_height: {}", da_block_height);         }
-        //         // lock.init_tx_pool(block_height);
-        //     }
-        // }
 
         // input pool data to DA
         let end_reason = loop {
