@@ -161,7 +161,7 @@ where
         config.prometheus_registry(),
         task_manager.spawn_essential_handle(),
         client.clone(),
-        cli.run.encrypted_mempool,
+        false,
         cli.run.using_external_decryptor,
     );
 
