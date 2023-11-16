@@ -43,7 +43,7 @@ pub struct ExtendedRunCmd {
     pub sealing: Option<Sealing>,
 
     #[clap(long)]
-    pub encrypted_mempool: bool,
+    pub rollup_id: String,
 
     #[clap(long)]
     pub using_external_decryptor: bool,
@@ -67,7 +67,7 @@ pub struct ExtendedRunCmd {
 #[derive(Debug)]
 pub struct ExtendedConfiguration {
     pub sealing: Option<Sealing>,
-    pub encrypted_mempool: bool,
+    pub rollup_id: String,
     pub using_external_decryptor: bool,
 }
 
