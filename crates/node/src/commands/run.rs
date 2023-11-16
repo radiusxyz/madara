@@ -43,9 +43,6 @@ pub struct ExtendedRunCmd {
     pub sealing: Option<Sealing>,
 
     #[clap(long)]
-    pub rollup_id: String,
-
-    #[clap(long)]
     pub using_external_decryptor: bool,
 
     #[clap(long)]
@@ -67,7 +64,6 @@ pub struct ExtendedRunCmd {
 #[derive(Debug)]
 pub struct ExtendedConfiguration {
     pub sealing: Option<Sealing>,
-    pub rollup_id: String,
     pub using_external_decryptor: bool,
 }
 
