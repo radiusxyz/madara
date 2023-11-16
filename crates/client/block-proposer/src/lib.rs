@@ -443,14 +443,15 @@ where
         let request = JsonRequest {
             jsonrpc: "2.0",
             method: "get_tx_list",
-            params: json!({"rollup_id":"Rollup_0", "block_height":block_height}),
+            params: json!({"rollup_id":std::env::var("ROLLUP_ID").unwrap_or("Rollup_0".into()), "block_height":block_height}),
             id: 1,
         };
 
         let request_str = serde_json::to_string(&request).unwrap();
 
         // set server uri
-        let uri = Uri::from_static("http://192.168.12.130:3001");
+        let sequencer_host = std::env::var("SEQUENCER_HOST").unwrap_or("http://127.0.0.1:8000".into());
+        let uri = Uri::try_from(sequencer_host).unwrap();
 
         // create JSON-RPC request
         let request = Request::post(uri)
