@@ -1,12 +1,10 @@
-use std::collections::HashMap;
 use std::fs;
 use std::mem::MaybeUninit;
-use std::sync::{Mutex, Once};
+use std::sync::Once;
 
+pub use config::ConfigError;
 use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
-use toml;
-
 pub static mut CONFIG: MaybeUninit<Config> = MaybeUninit::uninit();
 static INIT: Once = Once::new();
 

@@ -546,7 +546,7 @@ mod tests {
         let mut pool = pool();
 
         // when
-        pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]], ..DEFAULT_TX }).unwrap();
+        pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]], ..DEFAULT_TX }, None).unwrap();
 
         // then
         assert_eq!(pool.ready().count(), 1);
@@ -559,8 +559,8 @@ mod tests {
         let mut pool = pool();
 
         // when
-        pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]], ..DEFAULT_TX }).unwrap();
-        pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]], ..DEFAULT_TX }).unwrap_err();
+        pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]], ..DEFAULT_TX }, None).unwrap();
+        pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]], ..DEFAULT_TX }, None).unwrap_err();
 
         // then
         assert_eq!(pool.ready().count(), 1);
@@ -573,11 +573,14 @@ mod tests {
         let mut pool = pool();
 
         // when
-        pool.import(Transaction { data: vec![1u8], requires: vec![vec![0]], provides: vec![vec![1]], ..DEFAULT_TX })
-            .unwrap();
+        pool.import(
+            Transaction { data: vec![1u8], requires: vec![vec![0]], provides: vec![vec![1]], ..DEFAULT_TX },
+            None,
+        )
+        .unwrap();
         assert_eq!(pool.ready().count(), 0);
         assert_eq!(pool.ready.len(), 0);
-        pool.import(Transaction { data: vec![2u8], hash: 2, provides: vec![vec![0]], ..DEFAULT_TX }).unwrap();
+        pool.import(Transaction { data: vec![2u8], hash: 2, provides: vec![vec![0]], ..DEFAULT_TX }, None).unwrap();
 
         // then
         assert_eq!(pool.ready().count(), 2);
@@ -590,30 +593,39 @@ mod tests {
         let mut pool = pool();
 
         // when
-        pool.import(Transaction { data: vec![1u8], requires: vec![vec![0]], provides: vec![vec![1]], ..DEFAULT_TX })
-            .unwrap();
-        pool.import(Transaction { data: vec![3u8], hash: 3, requires: vec![vec![2]], ..DEFAULT_TX }).unwrap();
-        pool.import(Transaction {
-            data: vec![2u8],
-            hash: 2,
-            requires: vec![vec![1]],
-            provides: vec![vec![3], vec![2]],
-            ..DEFAULT_TX
-        })
+        pool.import(
+            Transaction { data: vec![1u8], requires: vec![vec![0]], provides: vec![vec![1]], ..DEFAULT_TX },
+            None,
+        )
         .unwrap();
-        pool.import(Transaction {
-            data: vec![4u8],
-            hash: 4,
-            priority: 1_000u64,
-            requires: vec![vec![3], vec![4]],
-            ..DEFAULT_TX
-        })
+        pool.import(Transaction { data: vec![3u8], hash: 3, requires: vec![vec![2]], ..DEFAULT_TX }, None).unwrap();
+        pool.import(
+            Transaction {
+                data: vec![2u8],
+                hash: 2,
+                requires: vec![vec![1]],
+                provides: vec![vec![3], vec![2]],
+                ..DEFAULT_TX
+            },
+            None,
+        )
+        .unwrap();
+        pool.import(
+            Transaction {
+                data: vec![4u8],
+                hash: 4,
+                priority: 1_000u64,
+                requires: vec![vec![3], vec![4]],
+                ..DEFAULT_TX
+            },
+            None,
+        )
         .unwrap();
         assert_eq!(pool.ready().count(), 0);
         assert_eq!(pool.ready.len(), 0);
 
         let res = pool
-            .import(Transaction { data: vec![5u8], hash: 5, provides: vec![vec![0], vec![4]], ..DEFAULT_TX })
+            .import(Transaction { data: vec![5u8], hash: 5, provides: vec![vec![0], vec![4]], ..DEFAULT_TX }, None)
             .unwrap();
 
         // then
@@ -632,27 +644,24 @@ mod tests {
     fn should_handle_a_cycle() {
         // given
         let mut pool = pool();
-        pool.import(Transaction { data: vec![1u8], requires: vec![vec![0]], provides: vec![vec![1]], ..DEFAULT_TX })
-            .unwrap();
-        pool.import(Transaction {
-            data: vec![3u8],
-            hash: 3,
-            requires: vec![vec![1]],
-            provides: vec![vec![2]],
-            ..DEFAULT_TX
-        })
+        pool.import(
+            Transaction { data: vec![1u8], requires: vec![vec![0]], provides: vec![vec![1]], ..DEFAULT_TX },
+            None,
+        )
+        .unwrap();
+        pool.import(
+            Transaction { data: vec![3u8], hash: 3, requires: vec![vec![1]], provides: vec![vec![2]], ..DEFAULT_TX },
+            None,
+        )
         .unwrap();
         assert_eq!(pool.ready().count(), 0);
         assert_eq!(pool.ready.len(), 0);
 
         // when
-        pool.import(Transaction {
-            data: vec![2u8],
-            hash: 2,
-            requires: vec![vec![2]],
-            provides: vec![vec![0]],
-            ..DEFAULT_TX
-        })
+        pool.import(
+            Transaction { data: vec![2u8], hash: 2, requires: vec![vec![2]], provides: vec![vec![0]], ..DEFAULT_TX },
+            None,
+        )
         .unwrap();
 
         // then
@@ -665,7 +674,10 @@ mod tests {
 
         // let's close the cycle with one additional transaction
         let res = pool
-            .import(Transaction { data: vec![4u8], hash: 4, priority: 50u64, provides: vec![vec![0]], ..DEFAULT_TX })
+            .import(
+                Transaction { data: vec![4u8], hash: 4, priority: 50u64, provides: vec![vec![0]], ..DEFAULT_TX },
+                None,
+            )
             .unwrap();
         let mut it = pool.ready().map(|tx| tx.data[0]);
         assert_eq!(it.next(), Some(4));
@@ -680,27 +692,24 @@ mod tests {
     fn should_handle_a_cycle_with_low_priority() {
         // given
         let mut pool = pool();
-        pool.import(Transaction { data: vec![1u8], requires: vec![vec![0]], provides: vec![vec![1]], ..DEFAULT_TX })
-            .unwrap();
-        pool.import(Transaction {
-            data: vec![3u8],
-            hash: 3,
-            requires: vec![vec![1]],
-            provides: vec![vec![2]],
-            ..DEFAULT_TX
-        })
+        pool.import(
+            Transaction { data: vec![1u8], requires: vec![vec![0]], provides: vec![vec![1]], ..DEFAULT_TX },
+            None,
+        )
+        .unwrap();
+        pool.import(
+            Transaction { data: vec![3u8], hash: 3, requires: vec![vec![1]], provides: vec![vec![2]], ..DEFAULT_TX },
+            None,
+        )
         .unwrap();
         assert_eq!(pool.ready().count(), 0);
         assert_eq!(pool.ready.len(), 0);
 
         // when
-        pool.import(Transaction {
-            data: vec![2u8],
-            hash: 2,
-            requires: vec![vec![2]],
-            provides: vec![vec![0]],
-            ..DEFAULT_TX
-        })
+        pool.import(
+            Transaction { data: vec![2u8], hash: 2, requires: vec![vec![2]], provides: vec![vec![0]], ..DEFAULT_TX },
+            None,
+        )
         .unwrap();
 
         // then
@@ -713,13 +722,16 @@ mod tests {
 
         // let's close the cycle with one additional transaction
         let err = pool
-            .import(Transaction {
-                data: vec![4u8],
-                hash: 4,
-                priority: 1u64, // lower priority than Tx(2)
-                provides: vec![vec![0]],
-                ..DEFAULT_TX
-            })
+            .import(
+                Transaction {
+                    data: vec![4u8],
+                    hash: 4,
+                    priority: 1u64, // lower priority than Tx(2)
+                    provides: vec![vec![0]],
+                    ..DEFAULT_TX
+                },
+                None,
+            )
             .unwrap_err();
         let mut it = pool.ready().map(|tx| tx.data[0]);
         assert_eq!(it.next(), None);
@@ -735,34 +747,41 @@ mod tests {
     fn should_remove_invalid_transactions() {
         // given
         let mut pool = pool();
-        pool.import(Transaction { data: vec![5u8], hash: 5, provides: vec![vec![0], vec![4]], ..DEFAULT_TX }).unwrap();
-        pool.import(Transaction { data: vec![1u8], requires: vec![vec![0]], provides: vec![vec![1]], ..DEFAULT_TX })
+        pool.import(Transaction { data: vec![5u8], hash: 5, provides: vec![vec![0], vec![4]], ..DEFAULT_TX }, None)
             .unwrap();
-        pool.import(Transaction { data: vec![3u8], hash: 3, requires: vec![vec![2]], ..DEFAULT_TX }).unwrap();
-        pool.import(Transaction {
-            data: vec![2u8],
-            hash: 2,
-            requires: vec![vec![1]],
-            provides: vec![vec![3], vec![2]],
-            ..DEFAULT_TX
-        })
+        pool.import(
+            Transaction { data: vec![1u8], requires: vec![vec![0]], provides: vec![vec![1]], ..DEFAULT_TX },
+            None,
+        )
         .unwrap();
-        pool.import(Transaction {
-            data: vec![4u8],
-            hash: 4,
-            priority: 1_000u64,
-            requires: vec![vec![3], vec![4]],
-            ..DEFAULT_TX
-        })
+        pool.import(Transaction { data: vec![3u8], hash: 3, requires: vec![vec![2]], ..DEFAULT_TX }, None).unwrap();
+        pool.import(
+            Transaction {
+                data: vec![2u8],
+                hash: 2,
+                requires: vec![vec![1]],
+                provides: vec![vec![3], vec![2]],
+                ..DEFAULT_TX
+            },
+            None,
+        )
+        .unwrap();
+        pool.import(
+            Transaction {
+                data: vec![4u8],
+                hash: 4,
+                priority: 1_000u64,
+                requires: vec![vec![3], vec![4]],
+                ..DEFAULT_TX
+            },
+            None,
+        )
         .unwrap();
         // future
-        pool.import(Transaction {
-            data: vec![6u8],
-            hash: 6,
-            priority: 1_000u64,
-            requires: vec![vec![11]],
-            ..DEFAULT_TX
-        })
+        pool.import(
+            Transaction { data: vec![6u8], hash: 6, priority: 1_000u64, requires: vec![vec![11]], ..DEFAULT_TX },
+            None,
+        )
         .unwrap();
         assert_eq!(pool.ready().count(), 5);
         assert_eq!(pool.future.len(), 1);
@@ -780,40 +799,34 @@ mod tests {
         // given
         let mut pool = pool();
         // future (waiting for 0)
-        pool.import(Transaction {
-            data: vec![5u8],
-            hash: 5,
-            requires: vec![vec![0]],
-            provides: vec![vec![100]],
-            ..DEFAULT_TX
-        })
+        pool.import(
+            Transaction { data: vec![5u8], hash: 5, requires: vec![vec![0]], provides: vec![vec![100]], ..DEFAULT_TX },
+            None,
+        )
         .unwrap();
         // ready
-        pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]], ..DEFAULT_TX }).unwrap();
-        pool.import(Transaction {
-            data: vec![2u8],
-            hash: 2,
-            requires: vec![vec![2]],
-            provides: vec![vec![3]],
-            ..DEFAULT_TX
-        })
+        pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]], ..DEFAULT_TX }, None).unwrap();
+        pool.import(
+            Transaction { data: vec![2u8], hash: 2, requires: vec![vec![2]], provides: vec![vec![3]], ..DEFAULT_TX },
+            None,
+        )
         .unwrap();
-        pool.import(Transaction {
-            data: vec![3u8],
-            hash: 3,
-            requires: vec![vec![1]],
-            provides: vec![vec![2]],
-            ..DEFAULT_TX
-        })
+        pool.import(
+            Transaction { data: vec![3u8], hash: 3, requires: vec![vec![1]], provides: vec![vec![2]], ..DEFAULT_TX },
+            None,
+        )
         .unwrap();
-        pool.import(Transaction {
-            data: vec![4u8],
-            hash: 4,
-            priority: 1_000u64,
-            requires: vec![vec![3], vec![2]],
-            provides: vec![vec![4]],
-            ..DEFAULT_TX
-        })
+        pool.import(
+            Transaction {
+                data: vec![4u8],
+                hash: 4,
+                priority: 1_000u64,
+                requires: vec![vec![3], vec![2]],
+                provides: vec![vec![4]],
+                ..DEFAULT_TX
+            },
+            None,
+        )
         .unwrap();
 
         assert_eq!(pool.ready().count(), 4);
@@ -889,7 +902,7 @@ mod tests {
         pool.reject_future_transactions = true;
 
         // then
-        let err = pool.import(Transaction { data: vec![5u8], hash: 5, requires: vec![vec![0]], ..DEFAULT_TX });
+        let err = pool.import(Transaction { data: vec![5u8], hash: 5, requires: vec![vec![0]], ..DEFAULT_TX }, None);
 
         if let Err(error::Error::RejectedFutureTransaction) = err {
         } else {
@@ -903,7 +916,7 @@ mod tests {
         let mut pool = pool();
 
         // when
-        pool.import(Transaction { data: vec![5u8], hash: 5, requires: vec![vec![0]], ..DEFAULT_TX }).unwrap();
+        pool.import(Transaction { data: vec![5u8], hash: 5, requires: vec![vec![0]], ..DEFAULT_TX }, None).unwrap();
 
         // then
         assert_eq!(pool.future.len(), 1);
@@ -923,7 +936,7 @@ mod tests {
 
         // when
         let flag_value = pool.with_futures_enabled(|pool, flag| {
-            pool.import(Transaction { data: vec![5u8], hash: 5, requires: vec![vec![0]], ..DEFAULT_TX }).unwrap();
+            pool.import(Transaction { data: vec![5u8], hash: 5, requires: vec![vec![0]], ..DEFAULT_TX }, None).unwrap();
 
             flag
         });

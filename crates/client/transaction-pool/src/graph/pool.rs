@@ -194,10 +194,7 @@ impl<B: ChainApi> Pool<B> {
     ) -> Result<Vec<Result<ExtrinsicHash<B>, B::Error>>, B::Error> {
         let xts = xts.into_iter().map(|xt| (source, xt));
         let validated_transactions = self.verify(at, xts, CheckBannedBeforeVerify::Yes).await?;
-        match order {
-            Some(order) => Ok(self.validated_pool.submit(validated_transactions.into_values(), Some(order))),
-            None => Ok(self.validated_pool.submit(validated_transactions.into_values(), None)),
-        }
+        Ok(self.validated_pool.submit(validated_transactions.into_values(), order))
     }
 
     /// Resubmit the given extrinsics to the pool.
@@ -222,16 +219,10 @@ impl<B: ChainApi> Pool<B> {
         xt: ExtrinsicFor<B>,
         order: Option<u64>,
     ) -> Result<ExtrinsicHash<B>, B::Error> {
-        match order {
-            Some(order) => {
-                let res = self.submit_at(at, source, std::iter::once(xt), Some(order)).await?.pop();
-                res.expect("One extrinsic passed; one result returned; qed")
-            }
-            None => {
-                let res = self.submit_at(at, source, std::iter::once(xt), None).await?.pop();
-                res.expect("One extrinsic passed; one result returned; qed")
-            }
-        }
+        self.submit_at(at, source, std::iter::once(xt), order).await?.pop().ok_or({
+            log::error!("One extrinsic passed; one result returned; qed");
+            error::Error::Unactionable
+        })?
     }
 
     /// Import a single extrinsic and starts to watch its progress in the pool.

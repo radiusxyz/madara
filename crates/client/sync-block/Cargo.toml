@@ -9,7 +9,6 @@ repository.workspace = true
 
 [dependencies]
 rocksdb = "0.21.0"
-lazy_static = "1.4.0"
 base64 = { workspace = true }
 serde = { workspace = true, default-features = false }
 serde_json = { workspace = true, features = ["std"] }
@@ -19,3 +18,4 @@ hyper = { workspace = true, features = ["full"] }
 tokio = { workspace = true, features = ["full"] }
 dotenv = { workspace = true }
 mc-config = { workspace = true }
+log = { workspace = true, default-features = true }

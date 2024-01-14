@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use mc_sync_block::SYNC_DB;
 use mp_starknet::transaction::types::{EncryptedInvokeTransaction, Transaction};
 
+use crate::error::{Error, Result};
+
 #[derive(Debug, Clone, Default)]
 /// Txs struct
 /// 1 Txs for 1 block
@@ -20,7 +22,7 @@ pub struct Txs {
     /// store temporary encrypted tx
     temporary_pool: Vec<(u64, Transaction)>,
     /// store specific order's key receivement.
-    key_received: HashMap<u64, bool>,
+    received_keys: HashMap<u64, bool>,
     /// decrypted tx count
     decrypted_cnt: u64,
     /// current order
@@ -37,7 +39,7 @@ impl Txs {
         Self {
             encrypted_pool: HashMap::default(),
             temporary_pool: Vec::default(),
-            key_received: HashMap::default(),
+            received_keys: HashMap::default(),
             decrypted_cnt: 0,
             order: 0,
             not_encrypted_cnt: 0,
@@ -46,44 +48,38 @@ impl Txs {
     }
 
     /// add encrypted tx on Txs
-    pub fn set(&mut self, encrypted_invoke_transaction: EncryptedInvokeTransaction) -> u64 {
+    pub fn invoke_encrypted_tx(&mut self, encrypted_invoke_transaction: EncryptedInvokeTransaction) -> u64 {
         self.encrypted_pool.insert(self.order, encrypted_invoke_transaction);
-        self.key_received.insert(self.order, false);
+        self.received_keys.insert(self.order, false);
         self.increase_order();
         self.order - 1
     }
 
     /// get encrypted tx for order
-    pub fn get(&self, order: u64) -> Result<EncryptedInvokeTransaction, &str> {
-        match self.encrypted_pool.get(&order) {
-            Some(item) => Ok(item.clone()),
-            None => Err("get not exist tx from vector"),
-        }
+    pub fn get_invoked_encrypted_tx(&self, order: u64) -> Result<&EncryptedInvokeTransaction> {
+        self.encrypted_pool.get(&order).ok_or(Error::Retrieval(format!("Failed to get tx - order: {}", order)))
     }
 
     /// increase not encrypted count
     pub fn increase_not_encrypted_cnt(&mut self) -> u64 {
-        self.not_encrypted_cnt = self.not_encrypted_cnt + 1;
-        // println!("{}", self.not_encrypted_cnt);
         self.increase_order();
+        self.not_encrypted_cnt += 1;
         self.not_encrypted_cnt
     }
 
-    /// len
-    pub fn len(&self) -> usize {
-        self.encrypted_pool.values().collect::<Vec<_>>().len()
+    /// encrypted txs len
+    pub fn encrypted_txs_len(&self) -> usize {
+        self.encrypted_pool.values().len()
     }
 
     /// is close
     pub fn is_closed(&self) -> bool {
-        // println!("is closed {}", self.closed);
         self.closed
     }
 
     /// close
-    pub fn close(&mut self) -> bool {
+    pub fn close(&mut self) {
         self.closed = true;
-        self.closed
     }
 
     /// add tx to temporary pool
@@ -92,29 +88,22 @@ impl Txs {
     }
 
     /// get tx from temporary pool
-    pub fn get_tx_from_temporary_pool(&mut self, index: usize) -> (u64, Transaction) {
-        match self.temporary_pool.get(index) {
-            Some(tx) => tx.clone(),
-            None => panic!("aaaaaaak"),
-        }
-    }
-
-    /// get temporary pool length
-    pub fn temporary_pool_len(&mut self) -> usize {
-        self.temporary_pool.len()
+    pub fn get_tx_from_temporary_pool(&mut self, index: usize) -> Result<&(u64, Transaction)> {
+        self.temporary_pool
+            .get(index)
+            .ok_or(Error::Retrieval(format!("Failed to get tx from the temporary pool- index: {}", index)))
     }
 
     /// get temporary pool
-    pub fn get_temporary_pool(&self) -> Vec<(u64, Transaction)> {
-        self.temporary_pool.clone()
+    pub fn get_temporary_pool(&self) -> &[(u64, Transaction)] {
+        &self.temporary_pool
     }
 
     /// increase order
     /// not only for set new encrypted tx
     /// but also for declare tx, deploy account tx
-    pub fn increase_order(&mut self) -> u64 {
-        self.order = self.order + 1;
-        self.order
+    pub fn increase_order(&mut self) {
+        self.order += 1;
     }
 
     /// order getter
@@ -125,34 +114,27 @@ impl Txs {
     /// get encrypted tx count
     /// it's not order
     pub fn get_tx_cnt(&self) -> u64 {
-        // println!("{}, {}", self.encrypted_pool.len() as u64, self.not_encrypted_cnt);
-        let tmp = self.encrypted_pool.len() as u64 + self.not_encrypted_cnt;
-        tmp
+        self.encrypted_pool.len() as u64 + self.not_encrypted_cnt
     }
 
     /// increase decrypted tx count
-    pub fn increase_decrypted_cnt(&mut self) -> u64 {
-        self.decrypted_cnt = self.decrypted_cnt + 1;
-        self.decrypted_cnt
+    pub fn increase_decrypted_cnt(&mut self) {
+        self.decrypted_cnt += 1;
     }
 
     /// get decrypted tx count
     pub fn get_decrypted_cnt(&self) -> u64 {
-        // println!("{}, {}", self.decrypted_cnt as u64, self.not_encrypted_cnt);
         self.decrypted_cnt + self.not_encrypted_cnt
     }
 
     /// update key received information
-    pub fn update_key_received(&mut self, order: u64) {
-        self.key_received.insert(order, true);
+    pub fn update_received_keys(&mut self, order: u64) {
+        self.received_keys.insert(order, true);
     }
 
     /// get key received information
-    pub fn get_key_received(&self, order: u64) -> bool {
-        match self.key_received.get(&order) {
-            Some(received) => received.clone(),
-            None => false,
-        }
+    pub fn is_key_received(&self, order: u64) -> bool {
+        self.received_keys.contains_key(&order)
     }
 }
 
@@ -188,73 +170,64 @@ impl EncryptedPool {
         self.enabled
     }
 
-    /// check epool is disabled
-    pub fn is_disabled(&self) -> bool {
-        !self.enabled
-    }
-
     /// check epool is using external decryptor
     pub fn is_using_external_decryptor(&self) -> bool {
         self.using_external_decryptor
     }
 
     /// new epool
-    pub fn new(encrypted_mempool: bool, using_external_decryptor: bool) -> Self {
-        Self { txs: HashMap::default(), enabled: encrypted_mempool, using_external_decryptor }
+    pub fn new(is_enabled_encrypted_mempool: bool, using_external_decryptor: bool) -> Self {
+        Self { txs: HashMap::default(), enabled: is_enabled_encrypted_mempool, using_external_decryptor }
     }
 
     /// add new Txs for block_height
-    pub fn new_block(&mut self, block_height: u64) -> Txs {
-        println!("insert on {}", block_height);
-        self.txs.insert(block_height, Txs::new());
-        self.txs.get(&block_height).unwrap().clone()
+    pub fn new_block(&mut self, block_height: u64) -> &mut Txs {
+        log::info!("insert new tx on {}, if not exist.", block_height);
+        self.txs.entry(block_height).or_insert_with(Txs::new)
     }
 
     /// txs exist
     pub fn exist(&self, block_height: u64) -> bool {
-        match self.txs.get(&block_height) {
-            Some(_) => true,
-            None => false,
-        }
+        self.txs.contains_key(&block_height)
     }
 
     /// get txs
-    pub fn get_txs(&self, block_height: u64) -> Result<Txs, &str> {
-        match self.txs.get(&block_height) {
-            Some(txs) => Ok(txs.clone()),
-            None => Err("get not exist tx from map"),
-        }
+    pub fn get_txs(&self, block_height: u64) -> Result<&Txs> {
+        self.txs
+            .get(&block_height)
+            .ok_or(Error::Retrieval(format!("Failed to get txs - block height: {}", block_height)))
     }
 
     /// close
-    pub fn close(&mut self, block_height: u64) -> Result<bool, &str> {
-        match self.txs.get_mut(&block_height) {
-            Some(txs) => {
-                let raw_txs: Vec<_> = txs.encrypted_pool.values().cloned().collect();
-                println!("raw_txs: {:?}", raw_txs);
-                if raw_txs.len() != 0 {
-                    let txs_string = serde_json::to_string(&raw_txs).expect("serde_json failed to serialize txs");
-                    SYNC_DB.write("sync_target".to_string(), block_height.to_string());
-                    SYNC_DB.write(block_height.to_string(), txs_string);
-                }
-                txs.close();
-                Ok(true)
-            }
-            None => Err("not exist? cannot close"),
+    pub fn close(&mut self, block_height: u64) -> Result<bool> {
+        let txs = self
+            .txs
+            .get_mut(&block_height)
+            .ok_or(Error::Retrieval(format!("Failed to find block height: {}", block_height)))?;
+
+        if !txs.encrypted_pool.is_empty() {
+            let txs_string = serde_json::to_string(&txs.encrypted_pool.values().cloned().collect::<Vec<_>>())?;
+            let db = SYNC_DB
+                .get()
+                .ok_or(Error::SyncBlock("Failed to get sync db".to_string()))?
+                .as_ref()
+                .map_err(|e| Error::SyncBlock(format!("Failed to get sync db: {e:?}")))?;
+            db.write("sync_target".to_string(), block_height.to_string()).map_err(|e| {
+                Error::SyncBlock(format!("Failed to write sync target - block height: {block_height}, error: {e:?}"))
+            })?;
+            db.write(block_height.to_string(), txs_string).map_err(|e| {
+                Error::SyncBlock(format!("Failed to write encrypted txs - block height: {block_height}, error: {e:?}"))
+            })?;
         }
+
+        txs.close();
+
+        Ok(true)
     }
 
     ///
-    pub fn initialize_if_not_exist(&mut self, block_height: u64) {
-        match self.txs.get(&block_height) {
-            Some(_) => {
-                println!("txs exist {}", block_height);
-            }
-            None => {
-                self.new_block(block_height);
-                println!("txs not exist create new one for {}", block_height);
-            }
-        }
+    pub fn initialize_if_not_exist(&mut self, block_height: u64) -> &mut Txs {
+        self.new_block(block_height)
     }
 }
 
@@ -264,7 +237,7 @@ mod tests {
 
     #[test]
     fn first_test() {
-        let mut epool = EncryptedPool::default();
+        let _epool = EncryptedPool::default();
 
         // assert_eq!(ready.get().count(), 1);
     }

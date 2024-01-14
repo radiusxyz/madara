@@ -149,40 +149,18 @@ impl<B: ChainApi> ValidatedPool<B> {
         txs: impl IntoIterator<Item = ValidatedTransactionFor<B>>,
         order: Option<u64>,
     ) -> Vec<Result<ExtrinsicHash<B>, B::Error>> {
-        match order {
-            Some(order) => {
-                let results =
-                    txs.into_iter().map(|validated_tx| self.submit_one(validated_tx, Some(order))).collect::<Vec<_>>();
+        let results = txs.into_iter().map(|validated_tx| self.submit_one(validated_tx, order)).collect::<Vec<_>>();
 
-                // only enforce limits if there is at least one imported transaction
-                let removed =
-                    if results.iter().any(|res| res.is_ok()) { self.enforce_limits() } else { Default::default() };
+        // only enforce limits if there is at least one imported transaction
+        let removed = if results.iter().any(|res| res.is_ok()) { self.enforce_limits() } else { Default::default() };
 
-                results
-                    .into_iter()
-                    .map(|res| match res {
-                        Ok(ref hash) if removed.contains(hash) => Err(error::Error::ImmediatelyDropped.into()),
-                        other => other,
-                    })
-                    .collect()
-            }
-            None => {
-                let results =
-                    txs.into_iter().map(|validated_tx| self.submit_one(validated_tx, None)).collect::<Vec<_>>();
-
-                // only enforce limits if there is at least one imported transaction
-                let removed =
-                    if results.iter().any(|res| res.is_ok()) { self.enforce_limits() } else { Default::default() };
-
-                results
-                    .into_iter()
-                    .map(|res| match res {
-                        Ok(ref hash) if removed.contains(hash) => Err(error::Error::ImmediatelyDropped.into()),
-                        other => other,
-                    })
-                    .collect()
-            }
-        }
+        results
+            .into_iter()
+            .map(|res| match res {
+                Ok(ref hash) if removed.contains(hash) => Err(error::Error::ImmediatelyDropped.into()),
+                other => other,
+            })
+            .collect()
     }
 
     /// Submit single pre-validated transaction to the pool.

@@ -26,9 +26,9 @@ use starknet_core::types::{
     InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingTransactionReceipt,
     StateUpdate, SyncStatusType, Transaction,
 };
-use types::{EncryptedInvokeTransactionResult, EncryptedMempoolTransactionResult};
+use types::{EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse};
 
-use crate::types::{DecryptionInfo, ProvideDecryptionKeyResult, RpcGetProofInput, RpcGetProofOutput};
+use crate::types::{DecryptionInfo, ProvideDecryptionKeyResponse, RpcGetProofInput, RpcGetProofOutput};
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -153,8 +153,8 @@ pub trait StarknetRpcApi {
     fn encrypt_invoke_transaction(
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
-        t: u64,
-    ) -> RpcResult<EncryptedInvokeTransactionResult>;
+        t: u64, //  Time - The number of calculations for how much time should be taken in VDF
+    ) -> RpcResult<EncryptedInvokeTransactionResponse>;
 
     // (For testing) Decrypt Encrypted Invoke Transaction
     #[method(name = "decryptEncryptedInvokeTransaction")]
@@ -169,10 +169,10 @@ pub trait StarknetRpcApi {
     async fn add_encrypted_invoke_transaction(
         &self,
         encrypted_invoke_transaction: EncryptedInvokeTransaction,
-    ) -> RpcResult<EncryptedMempoolTransactionResult>;
+    ) -> RpcResult<EncryptedMempoolTransactionResponse>;
 
     /// Allow a client to pass the decryption key, after the client received the order_commitment
     /// from sequencer.
     #[method(name = "provideDecryptionKey")]
-    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResult>;
+    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResponse>;
 }

@@ -38,6 +38,18 @@ pub enum Error {
 
     #[error("Runtime error: {0}")]
     RuntimeApi(String),
+
+    #[error("Configuration error: {0}")]
+    Configuration(#[from] mc_config::ConfigError),
+
+    #[error("Serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    #[error("Retrieval error: {0}")]
+    Retrieval(String),
+
+    #[error("Sync block error: {0}")]
+    SyncBlock(String),
 }
 
 impl sc_transaction_pool_api::error::IntoPoolError for Error {

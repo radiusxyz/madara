@@ -5,11 +5,10 @@ use base64::engine::general_purpose;
 use base64::Engine as _;
 use hyper::header::HeaderValue;
 use hyper::{body, Body, Client, Request, StatusCode};
-use lazy_static::lazy_static;
 use mc_config::config_map;
-use rocksdb::{Error, IteratorMode, DB};
+use rocksdb::{IteratorMode, DB};
 use serde_json::{json, Value};
-use tokio;
+use tokio::sync::OnceCell;
 use tokio::time::{sleep, Duration};
 
 // Import Lazy from the lazy_static crate
@@ -21,64 +20,35 @@ pub struct SyncDB {
 
 impl SyncDB {
     // Constructor to open the database.
-    fn open() -> Result<SyncDB, Error> {
-        let path = Path::new("epool");
-        let db = DB::open_default(&path)?;
-        Ok(SyncDB { db })
+    fn open() -> Result<SyncDB, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(SyncDB { db: DB::open_default(Path::new("epool"))? })
     }
 
     // Method to perform a read operation.
-    fn read(&self, key: String) -> String {
+    // 로직 수정(jaemin): read에서 실패하면, None이 아닌, 에러를 반환하도록 설정
+    fn read(&self, key: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         // Serialize key to bytes
         let key_bytes = key.as_bytes();
 
-        // Use the 'get' method to retrieve the value.
-        let result_of_get = self.db.get(key_bytes);
-
-        let option = match result_of_get {
-            Ok(val) => val,
-            Err(err) => {
-                eprintln!("Failed to read from DB: {:?}", err);
-                None
-            }
-        };
-
         // Handle the None case.
-        let value_vec = match option {
-            Some(val) => val,
-            None => Vec::new(),
-        };
-        let value = String::from_utf8(value_vec).unwrap();
+        let value_vec = self.db.get(key_bytes)?.unwrap_or_default();
 
-        value
+        Ok(String::from_utf8(value_vec)?)
     }
 
     // Method to perform a write operation.
-    pub fn write(&self, key: String, value: String) {
-        // Serialize key to bytes
-        let key_bytes = key.as_bytes();
-
-        // Serialize value for storing in DB
-        let value_bytes = value.as_bytes();
-        let result_of_put = self.db.put(key_bytes, value_bytes);
-        match result_of_put {
-            Ok(()) => {}
-            Err(err) => eprintln!("Failed to write to DB: {:?}", err),
-        };
+    pub fn write(&self, key: String, value: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(self.db.put(key.as_bytes(), value.as_bytes())?)
     }
 
-    fn clear(&self) {
+    fn _clear(&self) {
         // Create an iterator starting at the first key.
         let iter = self.db.iterator(IteratorMode::Start);
 
         // Iterate through all key-value pairs and print them.
-        for result in iter {
-            let deleted = self.db.delete(result.unwrap().0);
-            match deleted {
-                Ok(()) => {}
-                Err(err) => {
-                    eprintln!("Failed to delete, error: {:?}", err);
-                }
+        for key_val in iter.flatten() {
+            if let Err(e) = self.db.delete(key_val.0) {
+                log::error!("Failed to delete key: {e:?}");
             }
         }
     }
@@ -88,71 +58,101 @@ impl SyncDB {
         let iter = self.db.iterator(IteratorMode::Start);
 
         // Iterate through all key-value pairs and print them.
-        for result in iter {
-            match result {
+        for entry in iter {
+            match entry {
                 Ok((key, value)) => {
-                    println!("key: {:?} value: {:?}", key, value);
+                    log::info!("key: {:?} value: {:?}", key, value);
                 }
                 Err(err) => {
-                    eprintln!("There is an error! {:?}", err);
+                    log::error!("There is an error! {:?}", err);
                 }
             }
         }
     }
 
-    fn get_next_entry(&self, start_key: String) -> (String, String) {
+    fn get_next_entry(&self, start_key: String) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
         // Serialize key to bytes. The process is 2-step since u64 does not directly support as_ref()
         let key_bytes = start_key.as_bytes();
 
         // Create an iterator starting from the key after the specified start_key.
         let mut iter = self.db.iterator(IteratorMode::From(key_bytes, rocksdb::Direction::Forward));
-
-        // Iterate to get the next entry.
-        let key_vec = iter.next().unwrap().unwrap().0.into_vec();
-        let value_vec = iter.next().unwrap().unwrap().1.into_vec();
-        let key = String::from_utf8(key_vec).unwrap();
-        let value = String::from_utf8(value_vec).unwrap();
-        return (key, value);
+        iter.next().ok_or("No next entry found".into()).and_then(|next_entry| {
+            let key_val = next_entry?;
+            let key = String::from_utf8(key_val.0.into())?;
+            let val = String::from_utf8(key_val.1.into())?;
+            Ok((key, val))
+        })
     }
 }
 
 // Create a global instance of SyncDB that can be accessed from other modules.
-lazy_static! {
-    pub static ref SYNC_DB: SyncDB = {
-        let db = SyncDB::open().unwrap_or_else(|err| {
-            eprintln!("Failed to open database: {:?}", err);
-            std::process::exit(1); // Exit the program on error
-        });
+pub static SYNC_DB: OnceCell<Result<SyncDB, Box<dyn std::error::Error + Send + Sync>>> = OnceCell::const_new();
 
-        db.clear();
+pub fn new_sync_db() -> Result<SyncDB, Box<dyn std::error::Error + Send + Sync>> {
+    let db = SyncDB::open().map_err(|e| {
+        log::error!("Failed to init sync database: {e:?}");
+        e
+    })?;
 
-        // Perform write operations here
-        db.write("sync".to_string(), "0".to_string());
-        db.write("sync_target".to_string(), "0".to_string());
-        db.write("synced_da_block_height".to_string(),"0".to_string());
+    // Perform write operations here
+    db.write("sync".to_string(), "0".to_string()).map_err(|e| {
+        log::error!("Failed to write sync: {e:?}");
+        e
+    })?;
+    db.write("sync_target".to_string(), "0".to_string())?;
+    db.write("synced_da_block_height".to_string(), "0".to_string())?;
 
-        db // Return the initialized SyncDB
-    };
+    Ok(db)
 }
 
+// Convert bytes to base64
 fn encode_data_to_base64(original: String) -> String {
-    // Convert string to bytes
-    let bytes = original.as_bytes();
-    // Convert bytes to base64
-    let base64_str: String = general_purpose::STANDARD.encode(&bytes);
-    base64_str
+    general_purpose::STANDARD.encode(original.as_bytes())
 }
 
-async fn submit_to_da(data: String) -> Result<String, Box<dyn std::error::Error>> {
+async fn send_request(
+    da_auth: String,
+    rpc_request: serde_json::Value,
+    method: &str,
+    da_host: String,
+) -> Result<hyper::Response<Body>, Box<dyn std::error::Error + Send + Sync>> {
+    let request_builder = Request::builder()
+        .method(method)
+        .uri(da_host)
+        .header("Authorization", da_auth.clone()) // Clone da_auth here
+        .header("Content-Type", "application/json")
+        .header("timeout", HeaderValue::from_static("100"))
+        .body(Body::from(rpc_request.to_string()))?;
+
+    let client = Client::new();
+    let response = client.request(request_builder).await?;
+    if response.status() != StatusCode::OK {
+        return Err(format!("Request failed with status code: {}", response.status()).into());
+    }
+
+    Ok(response)
+}
+
+async fn parse_response(response: hyper::Response<Body>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let response_body = body::to_bytes(response.into_body()).await?;
+    let parsed_response: Value = serde_json::from_slice(&response_body)?;
+
+    let res = parsed_response.get("result").ok_or_else(|| {
+        Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Result not found in response"))
+            as Box<dyn std::error::Error + Send + Sync>
+    })?;
+
+    Ok(res.to_string())
+}
+
+async fn submit_to_da(data: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let config_map = config_map();
-    let da_host = config_map.get_string("host").unwrap();
-    let da_namespace = config_map.get_string("namespace").unwrap();
-    let da_auth_token = config_map.get_string("auth_token").unwrap();
+    let da_host = config_map.get_string("host")?;
+    let da_namespace = config_map.get_string("namespace")?;
+    let da_auth_token = config_map.get_string("auth_token")?;
     let da_auth = format!("Bearer {}", da_auth_token);
 
     let encoded_data = encode_data_to_base64(data);
-
-    let client = Client::new();
 
     let rpc_request = json!({
         "id": 1,
@@ -168,42 +168,18 @@ async fn submit_to_da(data: String) -> Result<String, Box<dyn std::error::Error>
         ],
     });
 
-    // Create a mutable request builder
-    let request_builder = Request::builder()
-        .method("POST")
-        .uri(da_host)
-        .header("Authorization", da_auth.clone()) // Clone da_auth here
-        .header("Content-Type", "application/json")
-        .header("timeout", HeaderValue::from_static("100"))
-        .body(Body::from(rpc_request.to_string()))?;
-
-    // Send the request and await the response
-    let response = client.request(request_builder).await?;
-
-    if response.status() != StatusCode::OK {
-        return Err(format!("Request failed with status code: {}", response.status()).into());
-    }
-
-    let response_body = body::to_bytes(response.into_body()).await?;
-    let parsed: Value = serde_json::from_slice(&response_body)?;
-
-    if let Some(result_value) = parsed.get("result") {
-        Ok(result_value.to_string())
-    } else {
-        Err("Result not found in response".into()) // Or create a custom error type
-    }
+    let response = send_request(da_auth, rpc_request, "POST", da_host).await?;
+    parse_response(response).await
 }
 
-async fn retrieve_from_da(data: String) -> Result<String, Box<dyn std::error::Error>> {
+async fn retrieve_from_da(data: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let config_map = config_map();
-    let da_host = config_map.get_string("host").unwrap();
-    let da_namespace = config_map.get_string("namespace").unwrap();
-    let da_auth_token = config_map.get_string("auth_token").unwrap();
+    let da_host = config_map.get_string("host")?;
+    let da_namespace = config_map.get_string("namespace")?;
+    let da_auth_token = config_map.get_string("auth_token")?;
     let da_auth = format!("Bearer {}", da_auth_token);
 
-    let block_height: u64 = data.parse().unwrap();
-
-    let client = Client::new();
+    let block_height: u64 = data.parse()?;
 
     let rpc_request = json!({
         "id": 1,
@@ -217,33 +193,12 @@ async fn retrieve_from_da(data: String) -> Result<String, Box<dyn std::error::Er
         ],
     });
 
-    // Create a mutable request builder
-    let request_builder = Request::builder()
-        .method("POST")
-        .uri(da_host)
-        .header("Authorization", da_auth.clone()) // Clone da_auth here
-        .header("Content-Type", "application/json")
-        .header("timeout", HeaderValue::from_static("100"))
-        .body(Body::from(rpc_request.to_string()))?;
-
-    // Send the request and await the response
-    let response = client.request(request_builder).await?;
-
-    if response.status() != StatusCode::OK {
-        return Err(format!("Request failed with status code: {}", response.status()).into());
-    }
-
-    let response_body = body::to_bytes(response.into_body()).await?;
-    let parsed: Value = serde_json::from_slice(&response_body)?;
-
-    if let Some(result_value) = parsed.get("result") {
-        Ok(result_value.to_string())
-    } else {
-        Err("Result not found in response".into()) // Or create a custom error type
-    }
+    let response = send_request(da_auth, rpc_request, "POST", da_host).await?;
+    parse_response(response).await
 }
+
 pub async fn sync_with_da() {
-    println!(
+    log::info!(
         "
         @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
         @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@&&####&&@@@@@@@#&@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -281,48 +236,108 @@ pub async fn sync_with_da() {
     let mut da_failed = false;
     let mut start_time = Instant::now();
     let mut previous_block_height: u64 = 0;
-    loop {
+    'da: loop {
         sleep(Duration::from_millis(3000)).await;
-        let sync = SYNC_DB.read("sync".to_string());
-        let sync_target = SYNC_DB.read("sync_target".to_string());
 
-        println!("sync_target: {:?} and sync {:?}", sync_target, sync);
+        // Initialize(if needed) or get a global instance of SyncDB that can be accessed from other modules.
+        let db = match SYNC_DB.get_or_init(|| async { new_sync_db() }).await {
+            Ok(sync_db) => sync_db,
+            Err(_) => continue 'da,
+        };
+
+        let sync = match db.read("sync".to_string()) {
+            Ok(sync) => sync,
+            Err(e) => {
+                log::error!("Failed to read sync: {e:?}");
+                continue 'da;
+            }
+        };
+        let sync_target = match db.read("sync_target".to_string()) {
+            Ok(sync_target) => sync_target,
+            Err(e) => {
+                log::error!("Failed to read sync_target: {e:?}");
+                continue 'da;
+            }
+        };
+
+        log::info!("sync_target: {sync_target:?} and sync {sync:?}");
         if sync_target != sync {
-            SYNC_DB.display_all();
-            let (next_sync, next_txs) = SYNC_DB.get_next_entry(sync);
+            db.display_all();
+            let (next_sync, next_txs) = match db.get_next_entry(sync) {
+                Ok((next_sync, next_txs)) => (next_sync, next_txs),
+                Err(e) => {
+                    log::error!("Failed to get next entry: {e:?}");
+                    continue 'da;
+                }
+            };
             if !da_failed {
                 let block_height = submit_to_da(next_txs).await;
                 match block_height {
                     Ok(block_height) => {
-                        println!(
+                        log::info!(
                             "<------------------------------------DA BLOCK \
                              HEIGHT------------------------------------------>: {}",
                             block_height
                         );
-                        SYNC_DB.write("sync".to_string(), next_sync);
-                        SYNC_DB.write("synced_da_block_height".to_string(), block_height);
+                        match db.write("sync".to_string(), next_sync) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                log::error!("Failed to write sync: {e:?}");
+                                continue 'da;
+                            }
+                        }
+                        match db.write("synced_da_block_height".to_string(), block_height) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                log::error!("Failed to write synced_da_block_height: {e:?}");
+                                continue 'da;
+                            }
+                        }
                     }
                     Err(err) => {
                         da_failed = true;
                         start_time = Instant::now();
-                        previous_block_height = SYNC_DB.read("synced_da_block_height".to_string()).parse().unwrap();
-                        eprintln!("Failed to submit to DA with error: {:?}, trying to retrieve", err);
+                        match db.read("synced_da_block_height".to_string()) {
+                            Ok(synced_da_block_height) => match synced_da_block_height.parse() {
+                                Ok(height) => previous_block_height = height,
+                                Err(e) => {
+                                    log::error!("Failed to parse synced_da_block_height: {e:?}");
+                                    continue 'da;
+                                }
+                            },
+                            Err(e) => {
+                                log::error!("Failed to read synced_da_block_height: {e:?}");
+                                continue 'da;
+                            }
+                        }
+                        log::error!("Failed to submit to DA with error: {:?}, trying to retrieve", err);
                     }
                 }
             } else {
                 previous_block_height += 1;
-                let retrieved_from_da = retrieve_from_da(previous_block_height.to_string()).await;
-                match retrieved_from_da {
+                match retrieve_from_da(previous_block_height.to_string()).await {
                     Ok(_) => {
-                        SYNC_DB.write("synced_da_block_height".to_string(), previous_block_height.to_string());
-                        SYNC_DB.write("sync".to_string(), next_sync);
+                        match db.write("synced_da_block_height".to_string(), previous_block_height.to_string()) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                log::error!("Failed to write synced_da_block_height: {e:?}");
+                                continue 'da;
+                            }
+                        }
+                        match db.write("sync".to_string(), next_sync) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                log::error!("Failed to write sync: {e:?}");
+                                continue 'da;
+                            }
+                        }
                         da_failed = false;
                     }
-                    Err(err) => {
+                    Err(e) => {
                         if start_time.elapsed().as_secs() > 24 * 60 * 60 {
                             panic!("Total time exceeded 24 hours");
                         };
-                        eprintln!("Failed to retrieve: {:?}, incrementing the block_height", err);
+                        log::error!("Failed to retrieve: {e:?}, incrementing the block_height");
                     }
                 }
             }
@@ -332,6 +347,8 @@ pub async fn sync_with_da() {
 
 #[cfg(test)]
 mod tests {
+    use mc_config::init_config;
+
     use super::*;
 
     #[test]
@@ -359,12 +376,16 @@ mod tests {
         let encoded_data_to_store = encode_data_to_base64("Bye World".to_string());
 
         rt.block_on(async {
+            let home_path = std::env::var("HOME").unwrap_or(std::env::var("USERPROFILE").unwrap_or(".".into()));
+            init_config(&format!("{}/.madara", home_path));
+
             let block_height = submit_to_da(data_to_store).await;
             match block_height {
                 Ok(block_height) => {
                     let retrieved_from_da = retrieve_from_da(block_height).await;
                     match retrieved_from_da {
                         Ok(encoded_data_from_da) => {
+                            println!("hihi");
                             assert_eq!(encoded_data_to_store, encoded_data_from_da);
                         }
                         Err(err) => eprintln!("Failed to retrieve from DA with error: {:?}", err),

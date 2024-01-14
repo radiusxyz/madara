@@ -265,9 +265,10 @@ pub fn new_full(config: Configuration, cli: Cli) -> Result<TaskManager, ServiceE
         other: (block_import, grandpa_link, mut telemetry, madara_backend),
     } = new_partial(&config, &cli, build_import_queue)?;
     let config_map = config_map();
-    if config_map.get_bool("is_validating").unwrap() == true {
+    if config_map.get_bool("is_validating").map_err(|e| ServiceError::Other(format!("Configuration error: {}", e)))? {
         task_manager.spawn_essential_handle().spawn("sync-DA", Some("sync-DA"), sync_with_da());
     }
+
     let mut net_config = sc_network::config::FullNetworkConfiguration::new(&config.network);
 
     let grandpa_protocol_name = sc_consensus_grandpa::protocol_standard_name(
@@ -401,7 +402,7 @@ pub fn new_full(config: Configuration, cli: Cli) -> Result<TaskManager, ServiceE
         let proposer_factory = ProposerFactory::new(
             task_manager.spawn_handle(),
             client.clone(),
-            transaction_pool.clone(),
+            transaction_pool,
             prometheus_registry.as_ref(),
         );
 
