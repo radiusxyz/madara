@@ -46,7 +46,7 @@ pub use graph::{
 };
 use parking_lot::Mutex;
 use prometheus_endpoint::Registry as PrometheusRegistry;
-use sc_transaction_pool_api::error::{Error as TxPoolError, IntoPoolError};
+use sc_transaction_pool_api::error::Error as TxPoolError;
 use sc_transaction_pool_api::{
     ChainEvent, ImportNotificationStream, InPoolTransaction, MaintainedTransactionPool, PoolFuture, PoolStatus,
     ReadyTransactions, TransactionFor, TransactionPool, TransactionSource, TransactionStatusStreamFor, TxHash,
@@ -252,20 +252,21 @@ where
 pub trait EncryptedTransactionPool: TransactionPool + Send + Sync {
     // // Block type.
     // type Block: BlockT;
-    // /// Transaction hash type.
-    // type Hash: std::hash::Hash + Eq + Member + Serialize + DeserializeOwned;
-    // /// In-pool transaction type.
-    // type InPoolTransaction: InPoolTransaction<Transaction = TransactionFor<Self>, Hash =
-    // TxHash<Self>>; /// Error type.
+    /// Transaction hash type.
+    type Hash: std::hash::Hash + Eq + Member + Serialize + DeserializeOwned;
+    /// In-pool transaction type.
+    type InPoolTransaction: InPoolTransaction<Transaction = TransactionFor<Self>, Hash = TxHash<Self>>;
+    /// Error type.
     // type Error: From<sc_transaction_pool::error::Error> + IntoPoolError;
+
     /// submit_one of TransactionPool trait and add order
     fn submit_one_with_order(
         &self,
-        at: &BlockId<<Self as TransactionPool>::Block>,
+        at: &BlockId<Self::Block>,
         source: TransactionSource,
         xt: TransactionFor<Self>,
         order: u64,
-    ) -> PoolFuture<TxHash<Self>, <Self as TransactionPool>::Error>;
+    ) -> PoolFuture<TxHash<Self>, Self::Error>;
 
     /// submit_at of TransactionPool trait and add order
     fn submit_at_with_order(
@@ -274,100 +275,106 @@ pub trait EncryptedTransactionPool: TransactionPool + Send + Sync {
         source: TransactionSource,
         xts: Vec<TransactionFor<Self>>,
         order: Option<u64>,
-    ) -> PoolFuture<TxHashResults<Self, <Self as TransactionPool>::Error>, <Self as TransactionPool>::Error>;
+    ) -> PoolFuture<TxHashResults<Self, Self::Error>, Self::Error>;
 
     /// encrypted_pool
     fn encrypted_pool(&self) -> Arc<TokioMutex<EncryptedPool>>;
 
-    //     // *** RPC
+    // *** RPC
 
-    //     /// Returns a future that imports a bunch of unverified transactions to the pool.
-    //     fn submit_at(
-    //         &self,
-    //         at: &BlockId<<Self as EncryptedTransactionPool>::Block>,
-    //         source: TransactionSource,
-    //         xts: Vec<TransactionFor<Self>>,
-    //     ) -> PoolFuture<
-    //         Vec<Result<TxHash<Self>, <Self as EncryptedTransactionPool>::Error>>,
-    //         <Self as EncryptedTransactionPool>::Error,
-    //     >;
+    /// Returns a future that imports a bunch of unverified transactions to the pool.
+    fn submit_at(
+        &self,
+        at: &BlockId<Self::Block>,
+        source: TransactionSource,
+        xts: Vec<TransactionFor<Self>>,
+    ) -> PoolFuture<Vec<Result<TxHash<Self>, Self::Error>>, Self::Error>;
 
-    //     /// Returns a future that imports one unverified transaction to the pool.
-    //     fn submit_one(
-    //         &self,
-    //         at: &BlockId<<Self as EncryptedTransactionPool>::Block>,
-    //         source: TransactionSource,
-    //         xt: TransactionFor<Self>,
-    //     ) -> PoolFuture<TxHash<Self>, <Self as EncryptedTransactionPool>::Error>;
+    /// Returns a future that imports one unverified transaction to the pool.
+    fn submit_one(
+        &self,
+        at: &BlockId<Self::Block>,
+        source: TransactionSource,
+        xt: TransactionFor<Self>,
+    ) -> PoolFuture<TxHash<Self>, Self::Error>;
 
-    //     /// Returns a future that import a single transaction and starts to watch their progress in
-    // the     /// pool.
-    //     fn submit_and_watch(
-    //         &self,
-    //         at: &BlockId<<Self as EncryptedTransactionPool>::Block>,
-    //         source: TransactionSource,
-    //         xt: TransactionFor<Self>,
-    //     ) -> PoolFuture<Pin<Box<TransactionStatusStreamFor<Self>>>, <Self as
-    // EncryptedTransactionPool>::Error>;
+    /// Returns a future that import a single transaction and starts to watch their progress in the
+    /// pool.
+    fn submit_and_watch(
+        &self,
+        at: &BlockId<Self::Block>,
+        source: TransactionSource,
+        xt: TransactionFor<Self>,
+    ) -> PoolFuture<Pin<Box<TransactionStatusStreamFor<Self>>>, Self::Error>;
 
-    //     // *** Block production / Networking
-    //     /// Get an iterator for ready transactions ordered by priority.
-    //     ///
-    //     /// Guarantees to return only when transaction pool got updated at `at` block.
-    //     /// Guarantees to return immediately when `None` is passed.
-    //     fn ready_at(
-    //         &self,
-    //         at: NumberFor<<Self as EncryptedTransactionPool>::Block>,
-    //     ) -> Pin<
-    //         Box<
-    //             dyn Future<
-    //                     Output = Box<
-    //                         dyn ReadyTransactions<Item = Arc<<Self as
-    // EncryptedTransactionPool>::InPoolTransaction>> + Send,                     >,
-    //                 > + Send,
-    //         >,
-    //     >;
+    ////////////
+    // // *** Block production / Networking
+    // /// Get an iterator for ready transactions ordered by priority.
+    // ///
+    // /// Guarantees to return only when transaction pool got updated at `at` block.
+    // /// Guarantees to return immediately when `None` is passed.
+    // fn ready_at(
+    //     &self,
+    //     at: NumberFor<Self::Block>,
+    // ) -> Pin<
+    //     Box<
+    //         dyn Future<
+    //                 Output = Box<
+    //                     dyn ReadyTransactions<Item = Arc<<Self as
+    // EncryptedTransactionPool>::InPoolTransaction>> + Send,                 >,
+    //             > + Send,
+    //     >,
+    // >;
 
-    //     /// Get an iterator for ready transactions ordered by priority.
-    //     fn ready(
-    //         &self,
-    //     ) -> Box<dyn ReadyTransactions<Item = Arc<<Self as
-    // EncryptedTransactionPool>::InPoolTransaction>> + Send>;
+    // /// Get an iterator for ready transactions ordered by priority.
+    // fn ready(
+    //     &self,
+    // ) -> Box<dyn ReadyTransactions<Item = Arc<<Self as EncryptedTransactionPool>::InPoolTransaction>>
+    // + Send>;
 
-    //     // *** Block production
-    //     /// Remove transactions identified by given hashes (and dependent transactions) from the
-    // pool.     fn remove_invalid(
-    //         &self,
-    //         hashes: &[TxHash<Self>],
-    //     ) -> Vec<Arc<<Self as EncryptedTransactionPool>::InPoolTransaction>>;
+    // // *** Block production
 
-    //     // *** logging
-    //     /// Returns pool status.
-    //     fn status(&self) -> PoolStatus;
+    // /// Remove transactions identified by given hashes (and dependent transactions) from the pool.
+    // fn remove_invalid(
+    //     &self,
+    //     hashes: &[TxHash<Self>],
+    // ) -> Vec<Arc<<Self as EncryptedTransactionPool>::InPoolTransaction>>;
 
-    //     // *** logging / RPC / networking
-    //     /// Return an event stream of transactions imported to the pool.
-    //     fn import_notification_stream(&self) -> ImportNotificationStream<TxHash<Self>>;
+    // // *** logging
 
-    //     // *** networking
-    //     /// Notify the pool about transactions broadcast.
-    //     fn on_broadcasted(&self, propagations: HashMap<TxHash<Self>, Vec<String>>);
+    // /// Returns pool status.
+    // fn status(&self) -> PoolStatus;
+    //////////
 
-    //     /// Returns transaction hash
-    //     fn hash_of(&self, xt: &TransactionFor<Self>) -> TxHash<Self>;
+    // *** logging / RPC / networking
+    /// Return an event stream of transactions imported to the pool.
+    fn import_notification_stream(&self) -> ImportNotificationStream<TxHash<Self>>;
 
-    //     /// Return specific ready transaction by hash, if there is one.
-    //     fn ready_transaction(
-    //         &self,
-    //         hash: &TxHash<Self>,
-    //     ) -> Option<Arc<<Self as EncryptedTransactionPool>::InPoolTransaction>>;
+    // *** networking
+    /// Notify the pool about transactions broadcast.
+    fn on_broadcasted(&self, propagations: HashMap<TxHash<Self>, Vec<String>>);
+
+    /// Returns transaction hash
+    fn hash_of(&self, xt: &TransactionFor<Self>) -> TxHash<Self>;
+
+    /// Return specific ready transaction by hash, if there is one.
+    fn ready_transaction(
+        &self,
+        hash: &TxHash<Self>,
+    ) -> Option<Arc<<Self as EncryptedTransactionPool>::InPoolTransaction>>;
 }
 
 impl<PoolApi, Block> EncryptedTransactionPool for BasicPool<PoolApi, Block>
 where
     Block: BlockT,
     PoolApi: 'static + graph::ChainApi<Block = Block>,
+    // <PoolApi as ChainApi>::Error: From<sc_transaction_pool::error::Error>,
 {
+    // type Block = PoolApi::Block;
+    type Hash = graph::ExtrinsicHash<PoolApi>;
+    type InPoolTransaction = graph::base_pool::Transaction<TxHash<Self>, TransactionFor<Self>>;
+    // type Error = PoolApi::Error;
+
     fn submit_one_with_order(
         &self,
         at: &BlockId<Self::Block>,
@@ -401,166 +408,118 @@ where
     fn encrypted_pool(&self) -> Arc<TokioMutex<EncryptedPool>> {
         self.pool().encrypted_pool()
     }
+
+    fn submit_at(
+        &self,
+        at: &BlockId<Self::Block>,
+        source: TransactionSource,
+        xts: Vec<TransactionFor<Self>>,
+    ) -> PoolFuture<TxHashResults<Self, Self::Error>, Self::Error> {
+        let pool = self.pool.clone();
+        let at = *at;
+
+        self.metrics.report(|metrics| metrics.submitted_transactions.inc_by(xts.len() as u64));
+
+        async move { pool.submit_at(&at, source, xts, None).await }.boxed()
+    }
+
+    fn submit_one(
+        &self,
+        at: &BlockId<Self::Block>,
+        source: TransactionSource,
+        xt: TransactionFor<Self>,
+    ) -> PoolFuture<TxHash<Self>, Self::Error> {
+        let pool = self.pool.clone();
+        let at = *at;
+
+        self.metrics.report(|metrics| metrics.submitted_transactions.inc());
+
+        async move { pool.submit_one(&at, source, xt, None).await }.boxed()
+    }
+
+    fn submit_and_watch(
+        &self,
+        at: &BlockId<Self::Block>,
+        source: TransactionSource,
+        xt: TransactionFor<Self>,
+    ) -> PoolFuture<Pin<Box<TransactionStatusStreamFor<Self>>>, Self::Error> {
+        let at = *at;
+        let pool = self.pool.clone();
+
+        self.metrics.report(|metrics| metrics.submitted_transactions.inc());
+
+        async move {
+            let watcher = pool.submit_and_watch(&at, source, xt).await?;
+
+            Ok(watcher.into_stream().boxed())
+        }
+        .boxed()
+    }
+
+    fn import_notification_stream(&self) -> ImportNotificationStream<TxHash<Self>> {
+        self.pool.validated_pool().import_notification_stream()
+    }
+
+    fn hash_of(&self, xt: &TransactionFor<Self>) -> TxHash<Self> {
+        self.pool.hash_of(xt)
+    }
+
+    fn on_broadcasted(&self, propagations: HashMap<TxHash<Self>, Vec<String>>) {
+        self.pool.validated_pool().on_broadcasted(propagations)
+    }
+
+    fn ready_transaction(
+        &self,
+        hash: &TxHash<Self>,
+    ) -> Option<Arc<<Self as EncryptedTransactionPool>::InPoolTransaction>> {
+        self.pool.validated_pool().ready_by_hash(hash)
+    }
+
+    // fn remove_invalid(
+    //     &self,
+    //     hashes: &[TxHash<Self>],
+    // ) -> Vec<Arc<<Self as EncryptedTransactionPool>::InPoolTransaction>> {
+    //     let removed = self.pool.validated_pool().remove_invalid(hashes);
+    //     self.metrics.report(|metrics| metrics.validations_invalid.inc_by(removed.len() as u64));
+    //     removed
+    // }
+
+    // fn status(&self) -> PoolStatus {
+    //     self.pool.validated_pool().status()
+    // }
+
+    // fn ready_at(&self, at: NumberFor<Self::Block>) -> PolledIterator<PoolApi> {
+    //     let status = TransactionPool::status(self);
+    //     // If there are no transactions in the pool, it is fine to return early.
+    //     //
+    //     // There could be transaction being added because of some re-org happening at the relevant
+    //     // block, but this is relative unlikely.
+    //     if status.ready == 0 && status.future == 0 {
+    //         return async { Box::new(std::iter::empty()) as Box<_> }.boxed();
+    //     }
+
+    //     if self.ready_poll.lock().updated_at() >= at {
+    //         log::trace!(target: LOG_TARGET, "Transaction pool already processed block  #{}", at);
+    //         let iterator: ReadyIteratorFor<PoolApi> = Box::new(self.pool.validated_pool().ready());
+    //         return async move { iterator }.boxed();
+    //     }
+
+    //     self.ready_poll
+    //         .lock()
+    //         .add(at)
+    //         .map(|received| {
+    //             received.unwrap_or_else(|e| {
+    //                 log::warn!("Error receiving pending set: {:?}", e);
+    //                 Box::new(std::iter::empty())
+    //             })
+    //         })
+    //         .boxed()
+    // }
+
+    // fn ready(&self) -> ReadyIteratorFor<PoolApi> {
+    //     Box::new(self.pool.validated_pool().ready())
+    // }
 }
-
-// impl<PoolApi, Block> EncryptedTransactionPool for BasicPool<PoolApi, Block>
-// where
-//     Block: BlockT,
-//     PoolApi: 'static + graph::ChainApi<Block = Block>,
-//     <PoolApi as ChainApi>::Error: From<sc_transaction_pool::error::Error>,
-// {
-//     type Block = PoolApi::Block;
-//     type Hash = graph::ExtrinsicHash<PoolApi>;
-//     type InPoolTransaction = graph::base_pool::Transaction<TxHash<Self>, TransactionFor<Self>>;
-//     type Error = PoolApi::Error;
-
-//     fn submit_one_with_order(
-//         &self,
-//         at: &BlockId<<Self as EncryptedTransactionPool>::Block>,
-//         source: TransactionSource,
-//         xt: TransactionFor<Self>,
-//         order: u64,
-//     ) -> PoolFuture<TxHash<Self>, <Self as EncryptedTransactionPool>::Error> {
-//         let pool = self.pool.clone();
-//         let at = *at;
-
-//         self.metrics.report(|metrics| metrics.submitted_transactions.inc());
-
-//         async move { pool.submit_one(&at, source, xt, Some(order)).await }.boxed()
-//     }
-
-//     fn submit_at_with_order(
-//         &self,
-//         at: &BlockId<<Self as EncryptedTransactionPool>::Block>,
-//         source: TransactionSource,
-//         xts: Vec<TransactionFor<Self>>,
-//         order: Option<u64>,
-//     ) -> PoolFuture<
-//         TxHashResults<Self, <Self as EncryptedTransactionPool>::Error>,
-//         <Self as EncryptedTransactionPool>::Error,
-//     > { let pool = self.pool.clone(); let at = *at;
-
-//         self.metrics.report(|metrics| metrics.submitted_transactions.inc_by(xts.len() as u64));
-
-//         async move { pool.submit_at(&at, source, xts, order).await }.boxed()
-//     }
-
-//     fn encrypted_pool(&self) -> Arc<TokioMutex<EncryptedPool>> {
-//         self.pool().encrypted_pool()
-//     }
-
-// fn submit_at(
-//     &self,
-//     at: &BlockId<<Self as EncryptedTransactionPool>::Block>,
-//     source: TransactionSource,
-//     xts: Vec<TransactionFor<Self>>,
-// ) -> PoolFuture<
-//     TxHashResults<Self, <Self as EncryptedTransactionPool>::Error>,
-//     <Self as EncryptedTransactionPool>::Error,
-// > { let pool = self.pool.clone(); let at = *at;
-
-//     self.metrics.report(|metrics| metrics.submitted_transactions.inc_by(xts.len() as u64));
-
-//     async move { pool.submit_at(&at, source, xts, None).await }.boxed()
-// }
-
-// fn submit_one(
-//     &self,
-//     at: &BlockId<<Self as EncryptedTransactionPool>::Block>,
-//     source: TransactionSource,
-//     xt: TransactionFor<Self>,
-// ) -> PoolFuture<TxHash<Self>, <Self as EncryptedTransactionPool>::Error> {
-//     let pool = self.pool.clone();
-//     let at = *at;
-
-//     self.metrics.report(|metrics| metrics.submitted_transactions.inc());
-
-//     async move { pool.submit_one(&at, source, xt, None).await }.boxed()
-// }
-
-// fn submit_and_watch(
-//     &self,
-//     at: &BlockId<<Self as EncryptedTransactionPool>::Block>,
-//     source: TransactionSource,
-//     xt: TransactionFor<Self>,
-// ) -> PoolFuture<Pin<Box<TransactionStatusStreamFor<Self>>>, <Self as
-// EncryptedTransactionPool>::Error> {     let at = *at;
-//     let pool = self.pool.clone();
-
-//     self.metrics.report(|metrics| metrics.submitted_transactions.inc());
-
-//     async move {
-//         let watcher = pool.submit_and_watch(&at, source, xt).await?;
-
-//         Ok(watcher.into_stream().boxed())
-//     }
-//     .boxed()
-// }
-
-// fn remove_invalid(
-//     &self,
-//     hashes: &[TxHash<Self>],
-// ) -> Vec<Arc<<Self as EncryptedTransactionPool>::InPoolTransaction>> {
-//     let removed = self.pool.validated_pool().remove_invalid(hashes);
-//     self.metrics.report(|metrics| metrics.validations_invalid.inc_by(removed.len() as u64));
-//     removed
-// }
-
-// fn status(&self) -> PoolStatus {
-//     self.pool.validated_pool().status()
-// }
-
-// fn import_notification_stream(&self) -> ImportNotificationStream<TxHash<Self>> {
-//     self.pool.validated_pool().import_notification_stream()
-// }
-
-// fn hash_of(&self, xt: &TransactionFor<Self>) -> TxHash<Self> {
-//     self.pool.hash_of(xt)
-// }
-
-// fn on_broadcasted(&self, propagations: HashMap<TxHash<Self>, Vec<String>>) {
-//     self.pool.validated_pool().on_broadcasted(propagations)
-// }
-
-// fn ready_transaction(
-//     &self,
-//     hash: &TxHash<Self>,
-// ) -> Option<Arc<<Self as EncryptedTransactionPool>::InPoolTransaction>> {
-//     self.pool.validated_pool().ready_by_hash(hash)
-// }
-
-// fn ready_at(&self, at: NumberFor<<Self as EncryptedTransactionPool>::Block>) ->
-// PolledIterator<PoolApi> {     let status = EncryptedTransactionPool::status(self);
-//     // If there are no transactions in the pool, it is fine to return early.
-//     //
-//     // There could be transaction being added because of some re-org happening at the relevant
-//     // block, but this is relative unlikely.
-//     if status.ready == 0 && status.future == 0 {
-//         return async { Box::new(std::iter::empty()) as Box<_> }.boxed();
-//     }
-
-//     if self.ready_poll.lock().updated_at() >= at {
-//         log::trace!(target: LOG_TARGET, "Transaction pool already processed block  #{}", at);
-//         let iterator: ReadyIteratorFor<PoolApi> = Box::new(self.pool.validated_pool().ready());
-//         return async move { iterator }.boxed();
-//     }
-
-//     self.ready_poll
-//         .lock()
-//         .add(at)
-//         .map(|received| {
-//             received.unwrap_or_else(|e| {
-//                 log::warn!("Error receiving pending set: {:?}", e);
-//                 Box::new(std::iter::empty())
-//             })
-//         })
-//         .boxed()
-// }
-
-// fn ready(&self) -> ReadyIteratorFor<PoolApi> {
-//     Box::new(self.pool.validated_pool().ready())
-// }
-// }
 
 impl<PoolApi, Block> TransactionPool for BasicPool<PoolApi, Block>
 where

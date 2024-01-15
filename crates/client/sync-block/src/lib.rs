@@ -11,8 +11,6 @@ use serde_json::{json, Value};
 use tokio::sync::OnceCell;
 use tokio::time::{sleep, Duration};
 
-// Import Lazy from the lazy_static crate
-// Import the Error type from rocksdb crate
 // Define a struct to hold the DB instance.
 pub struct SyncDB {
     db: DB,
@@ -136,7 +134,6 @@ async fn send_request(
 async fn parse_response(response: hyper::Response<Body>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let response_body = body::to_bytes(response.into_body()).await?;
     let parsed_response: Value = serde_json::from_slice(&response_body)?;
-
     let res = parsed_response.get("result").ok_or_else(|| {
         Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Result not found in response"))
             as Box<dyn std::error::Error + Send + Sync>
@@ -236,27 +233,27 @@ pub async fn sync_with_da() {
     let mut da_failed = false;
     let mut start_time = Instant::now();
     let mut previous_block_height: u64 = 0;
-    'da: loop {
+    'sync: loop {
         sleep(Duration::from_millis(3000)).await;
 
         // Initialize(if needed) or get a global instance of SyncDB that can be accessed from other modules.
         let db = match SYNC_DB.get_or_init(|| async { new_sync_db() }).await {
             Ok(sync_db) => sync_db,
-            Err(_) => continue 'da,
+            Err(_) => continue 'sync,
         };
 
         let sync = match db.read("sync".to_string()) {
             Ok(sync) => sync,
             Err(e) => {
                 log::error!("Failed to read sync: {e:?}");
-                continue 'da;
+                continue 'sync;
             }
         };
         let sync_target = match db.read("sync_target".to_string()) {
             Ok(sync_target) => sync_target,
             Err(e) => {
                 log::error!("Failed to read sync_target: {e:?}");
-                continue 'da;
+                continue 'sync;
             }
         };
 
@@ -267,7 +264,7 @@ pub async fn sync_with_da() {
                 Ok((next_sync, next_txs)) => (next_sync, next_txs),
                 Err(e) => {
                     log::error!("Failed to get next entry: {e:?}");
-                    continue 'da;
+                    continue 'sync;
                 }
             };
             if !da_failed {
@@ -283,14 +280,14 @@ pub async fn sync_with_da() {
                             Ok(_) => {}
                             Err(e) => {
                                 log::error!("Failed to write sync: {e:?}");
-                                continue 'da;
+                                continue 'sync;
                             }
                         }
                         match db.write("synced_da_block_height".to_string(), block_height) {
                             Ok(_) => {}
                             Err(e) => {
                                 log::error!("Failed to write synced_da_block_height: {e:?}");
-                                continue 'da;
+                                continue 'sync;
                             }
                         }
                     }
@@ -302,12 +299,12 @@ pub async fn sync_with_da() {
                                 Ok(height) => previous_block_height = height,
                                 Err(e) => {
                                     log::error!("Failed to parse synced_da_block_height: {e:?}");
-                                    continue 'da;
+                                    continue 'sync;
                                 }
                             },
                             Err(e) => {
                                 log::error!("Failed to read synced_da_block_height: {e:?}");
-                                continue 'da;
+                                continue 'sync;
                             }
                         }
                         log::error!("Failed to submit to DA with error: {:?}, trying to retrieve", err);
@@ -321,14 +318,14 @@ pub async fn sync_with_da() {
                             Ok(_) => {}
                             Err(e) => {
                                 log::error!("Failed to write synced_da_block_height: {e:?}");
-                                continue 'da;
+                                continue 'sync;
                             }
                         }
                         match db.write("sync".to_string(), next_sync) {
                             Ok(_) => {}
                             Err(e) => {
                                 log::error!("Failed to write sync: {e:?}");
-                                continue 'da;
+                                continue 'sync;
                             }
                         }
                         da_failed = false;
@@ -385,7 +382,6 @@ mod tests {
                     let retrieved_from_da = retrieve_from_da(block_height).await;
                     match retrieved_from_da {
                         Ok(encoded_data_from_da) => {
-                            println!("hihi");
                             assert_eq!(encoded_data_to_store, encoded_data_from_da);
                         }
                         Err(err) => eprintln!("Failed to retrieve from DA with error: {:?}", err),

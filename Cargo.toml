@@ -5,7 +5,6 @@ members = [
   "crates/pallets/starknet",
   "crates/primitives/starknet",
   "crates/primitives/digest-log",
-  "crates/client/block-proposer",
   "crates/client/db",
   "crates/client/rpc-core",
   "crates/client/rpc",
@@ -120,7 +119,6 @@ mc-db = { path = "crates/client/db" }
 mc-storage = { path = "crates/client/storage" }
 mc-rpc = { path = "crates/client/rpc" }
 mc-rpc-core = { path = "crates/client/rpc-core" }
-mc-block-proposer = { path = "crates/client/block-proposer" }
 mc-transaction-pool = { path = "crates/client/transaction-pool" }
 mc-sync-block = { path = "crates/client/sync-block" }
 mc-config = { path = "crates/client/config" }

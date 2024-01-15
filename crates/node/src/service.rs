@@ -9,7 +9,6 @@ use futures::future;
 use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi};
-use mc_block_proposer::ProposerFactory;
 use mc_config::config_map;
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
@@ -20,6 +19,7 @@ use mp_starknet::sequencer_address::{
 };
 use pallet_starknet::runtime_api::StarknetRuntimeApi;
 use prometheus_endpoint::Registry;
+use sc_basic_authorship::ProposerFactory;
 use sc_client_api::{Backend, BlockBackend, BlockchainEvents, HeaderBackend};
 use sc_consensus::BasicQueue;
 use sc_consensus_aura::{SlotProportion, StartAuraParams};
@@ -391,6 +391,7 @@ pub fn new_full(config: Configuration, cli: Cli) -> Result<TaskManager, ServiceE
                 &task_manager,
                 prometheus_registry.as_ref(),
                 commands_stream,
+                telemetry,
             )?;
 
             network_starter.start_network();
@@ -404,6 +405,7 @@ pub fn new_full(config: Configuration, cli: Cli) -> Result<TaskManager, ServiceE
             client.clone(),
             transaction_pool,
             prometheus_registry.as_ref(),
+            telemetry.as_ref().map(|x| x.handle()),
         );
 
         let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
@@ -513,6 +515,7 @@ fn run_manual_seal_authorship(
     task_manager: &TaskManager,
     prometheus_registry: Option<&Registry>,
     commands_stream: mpsc::Receiver<sc_consensus_manual_seal::rpc::EngineCommand<Hash>>,
+    telemetry: Option<Telemetry>,
 ) -> Result<(), ServiceError>
 where
     RuntimeApi: ConstructRuntimeApi<Block, FullClient>,
@@ -523,6 +526,7 @@ where
         client.clone(),
         transaction_pool.clone(),
         prometheus_registry,
+        telemetry.as_ref().map(|x| x.handle()),
     );
 
     thread_local!(static TIMESTAMP: RefCell<u64> = RefCell::new(0));

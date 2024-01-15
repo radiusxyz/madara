@@ -33,6 +33,7 @@ mc-sync-block = { workspace = true }
 mc-config = { workspace = true }
 sc-cli = { workspace = true }
 sc-client-api = { workspace = true }
+sc-basic-authorship = { workspace = true }
 sc-consensus = { workspace = true }
 sc-consensus-aura = { workspace = true }
 sc-consensus-grandpa = { workspace = true }
@@ -78,7 +79,6 @@ frame-benchmarking-cli = { workspace = true }
 blockifier = { workspace = true }
 hex = { workspace = true }
 madara-runtime = { workspace = true }
-mc-block-proposer = { workspace = true }
 mc-db = { workspace = true }
 mc-mapping-sync = { workspace = true }
 mc-rpc = { workspace = true }
