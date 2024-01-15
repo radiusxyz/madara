@@ -1,0 +1,30 @@
+---
+name: Task - Integration Tests
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  coverage:
+    # sadly, for now we have to "rebuild" for the coverage
+    runs-on: ubuntu-latest-32-cores
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "cache"
+          save-if: false
+      - name: Setup build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libudev-dev protobuf-compiler
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Coverage
+        run: cargo llvm-cov --codecov --output-path codecov.json
+      - name: Upload coverage to codecov.io
+        uses: codecov/codecov-action@v3
+        with:
+          files: codecov.json
+          fail_ci_if_error: false

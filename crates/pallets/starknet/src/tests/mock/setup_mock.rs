@@ -1,11 +1,11 @@
 use frame_support::traits::GenesisBuild;
 
-use crate::genesis_loader::GenesisLoader;
+use crate::genesis_loader::{GenesisData, GenesisLoader};
 use crate::{Config, GenesisConfig};
 
 // Configure a mock runtime to test the pallet.
 macro_rules! mock_runtime {
-    ($mock_runtime:ident, $enable_state_root:expr, $disable_transaction_fee:expr, $disable_nonce_validation: expr) => {
+    ($mock_runtime:ident, $disable_transaction_fee:expr, $disable_nonce_validation: expr) => {
 		pub mod $mock_runtime {
 			use frame_support::parameter_types;
 			use frame_support::traits::{ConstU16, ConstU64};
@@ -13,11 +13,12 @@ macro_rules! mock_runtime {
 			use sp_runtime::testing::Header;
 			use sp_runtime::traits::{BlakeTwo256, IdentityLookup};
 			use {crate as pallet_starknet, frame_system as system};
-			use crate::{ ContractAddressWrapper, SeqAddrUpdate, SequencerAddress};
+			use crate::{ SeqAddrUpdate, SequencerAddress};
 			use frame_support::traits::Hooks;
-			use mp_starknet::sequencer_address::DEFAULT_SEQUENCER_ADDRESS;
-            use mp_starknet::execution::types::Felt252Wrapper;
-            use mp_starknet::constants::SN_GOERLI_CHAIN_ID;
+			use mp_sequencer_address::DEFAULT_SEQUENCER_ADDRESS;
+            use mp_felt::Felt252Wrapper;
+			use starknet_api::api_core::{PatriciaKey, ContractAddress};
+			use starknet_api::hash::StarkFelt;
 
 
 			type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<MockRuntime>;
@@ -74,26 +75,26 @@ macro_rules! mock_runtime {
 				pub const TransactionLongevity: u64 = u64::MAX;
 				pub const InvokeTxMaxNSteps: u32 = 1_000_000;
 				pub const ValidateMaxNSteps: u32 = 1_000_000;
-				pub const EnableStateRoot: bool = $enable_state_root;
 				pub const DisableTransactionFee: bool = $disable_transaction_fee;
                 pub const DisableNonceValidation: bool = $disable_nonce_validation;
 				pub const ProtocolVersion: u8 = 0;
-                pub const ChainId: Felt252Wrapper = SN_GOERLI_CHAIN_ID;
+                pub const ChainId: Felt252Wrapper = mp_chain_id::SN_GOERLI_CHAIN_ID;
+                pub const MaxRecursionDepth: u32 = 50;
             }
 
 			impl pallet_starknet::Config for MockRuntime {
 				type RuntimeEvent = RuntimeEvent;
-				type SystemHash = mp_starknet::crypto::hash::pedersen::PedersenHasher;
+				type SystemHash = mp_hashers::pedersen::PedersenHasher;
 				type TimestampProvider = Timestamp;
 				type UnsignedPriority = UnsignedPriority;
 				type TransactionLongevity = TransactionLongevity;
 				type InvokeTxMaxNSteps = InvokeTxMaxNSteps;
 				type ValidateMaxNSteps = ValidateMaxNSteps;
-				type EnableStateRoot = EnableStateRoot;
 				type DisableTransactionFee = DisableTransactionFee;
                 type DisableNonceValidation = DisableNonceValidation;
 				type ProtocolVersion = ProtocolVersion;
                 type ChainId = ChainId;
+                type MaxRecursionDepth = MaxRecursionDepth;
 			}
 
 			/// Run to block n.
@@ -112,7 +113,7 @@ macro_rules! mock_runtime {
 			/// Setup initial block and sequencer address for unit tests.
 			pub(crate) fn basic_test_setup(n: u64) {
 				SeqAddrUpdate::<MockRuntime>::put(true);
-				let default_addr: ContractAddressWrapper = ContractAddressWrapper::try_from(&DEFAULT_SEQUENCER_ADDRESS).unwrap();
+				let default_addr = ContractAddress(PatriciaKey(StarkFelt::new(DEFAULT_SEQUENCER_ADDRESS).unwrap()));
 				SequencerAddress::<MockRuntime>::put(default_addr);
 				System::set_block_number(0);
 				run_to_block(n);
@@ -125,15 +126,15 @@ macro_rules! mock_runtime {
 pub fn new_test_ext<T: Config>() -> sp_io::TestExternalities {
     let mut t = frame_system::GenesisConfig::default().build_storage::<T>().unwrap();
 
-    let genesis: GenesisLoader = serde_json::from_str(std::include_str!("./genesis.json")).unwrap();
-    let genesis: GenesisConfig<T> = genesis.into();
+    let genesis_data: GenesisData = serde_json::from_str(std::include_str!("./genesis.json")).unwrap();
+    let genesis_loader = GenesisLoader::new(project_root::get_project_root().unwrap(), genesis_data);
+    let genesis: GenesisConfig<T> = genesis_loader.into();
 
     genesis.assimilate_storage(&mut t).unwrap();
 
     t.into()
 }
 
-mock_runtime!(default_mock, false, false, false);
-mock_runtime!(state_root_mock, true, false, false);
-mock_runtime!(fees_disabled_mock, false, true, false);
-mock_runtime!(no_nonce_validation_mock, false, true, true);
+mock_runtime!(default_mock, false, false);
+mock_runtime!(fees_disabled_mock, true, false);
+mock_runtime!(no_nonce_validation_mock, true, true);

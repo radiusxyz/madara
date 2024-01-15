@@ -1,13 +1,13 @@
 [package]
 name = "mc-rpc"
-version = "0.1.0"
+version.workspace = true
+edition.workspace = true
 description = "Starknet RPC compatibility layer for Substrate"
 authors = [
   "Timothée Delabrouille <https://github.com/tdelabro>",
   "Substrate DevHub <https://github.com/substrate-developer-hub>",
 ]
 homepage = "https://github.com/keep-starknet-strange/madara"
-edition = "2021"
 license = "MIT"
 publish = false
 repository = "https://github.com/keep-starknet-strange/madara"
@@ -24,7 +24,6 @@ mc-db = { workspace = true }
 mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
 mc-transaction-pool = { workspace = true }
-mp-starknet = { workspace = true }
 # Substate primitives
 frame-support = { workspace = true }
 frame-system = { workspace = true }
@@ -52,6 +51,10 @@ jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
 ] }
 log = { workspace = true, default-features = true }
+mp-block = { workspace = true }
+mp-felt = { workspace = true }
+mp-hashers = { workspace = true }
+mp-transactions = { workspace = true, features = ["client"] }
 serde_json = { workspace = true, default-features = true }
 thiserror = { workspace = true }
 encryptor = { workspace = true }

@@ -13,10 +13,7 @@ use mp_starknet::transaction::types::{EncryptedInvokeTransaction, InvokeTransact
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-mod constants;
 pub mod utils;
-
-pub mod types;
 
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_core::types::{
@@ -114,7 +111,7 @@ pub trait StarknetRpcApi {
 
     /// Get the details of a transaction by a given block id and index
     #[method(name = "getTransactionByBlockIdAndIndex")]
-    fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: usize) -> RpcResult<Transaction>;
+    fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<Transaction>;
 
     /// Get the information about the result of executing the requested block
     #[method(name = "getStateUpdate")]

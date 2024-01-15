@@ -1,13 +1,13 @@
 [package]
 name = "mc-rpc-core"
-version = "0.1.0"
+version.workspace = true
+edition.workspace = true
 description = "RPC trait of Starknet"
 authors = [
   "Timothée Delabrouille <https://github.com/tdelabro>",
   "Substrate DevHub <https://github.com/substrate-developer-hub>",
 ]
 homepage = "https://github.com/keep-starknet-strange/madara"
-edition = "2021"
 license = "MIT"
 publish = false
 repository = "https://github.com/keep-starknet-strange/madara"
@@ -30,9 +30,9 @@ jsonrpsee = { workspace = true, features = [
   "server",
   "macros",
 ], default-features = true }
+mp-block = { workspace = true }
 mp-digest-log = { workspace = true }
-mp-starknet = { workspace = true, default-features = true }
-num-bigint = { workspace = true, default-features = false }
+num-bigint = { workspace = true }
 serde = { workspace = true, default-features = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
@@ -42,4 +42,8 @@ sp-core = { workspace = true }
 sp-runtime = { workspace = true, default-features = true }
 mc-transaction-pool = { workspace = true }
 starknet-core = { workspace = true }
-starknet_api = { workspace = true, default-features = false }
+starknet_api = { workspace = true, default-features = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+assert_matches = "1.5.0"

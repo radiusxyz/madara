@@ -1,23 +1,4 @@
-use std::path::PathBuf;
-
-use sc_cli::RunCmd;
-
-/// Available Sealing methods.
-#[derive(Debug, Copy, Clone, clap::ValueEnum, Default)]
-pub enum Sealing {
-    // Seal using rpc method.
-    #[default]
-    Manual,
-    // Seal when transaction is executed.
-    Instant,
-}
-
-/// Available testnets.
-#[derive(Debug, Copy, Clone, PartialEq, clap::ValueEnum)]
-pub enum Testnet {
-    Local,
-    Sharingan,
-}
+use crate::commands::{ExtendedRunCmd, SetupCmd};
 
 #[derive(Debug, clap::Parser)]
 pub struct Cli {
@@ -56,18 +37,21 @@ pub struct ExtendedRunCmd {
 pub struct ExtendedConfiguration {
     pub sealing: Option<Sealing>,
     pub encrypted_mempool: bool,
-    pub using_external_decryptor: bool
+    pub using_external_decryptor: bool,
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, clap::Subcommand)]
 pub enum Subcommand {
-    /// Key management cli utilities
+    /// Sub-commands concerned with benchmarking.
     #[command(subcommand)]
-    Key(sc_cli::KeySubcommand),
+    Benchmark(frame_benchmarking_cli::BenchmarkCmd),
 
     /// Build a chain specification.
     BuildSpec(sc_cli::BuildSpecCmd),
+
+    /// Db meta columns information.
+    ChainInfo(sc_cli::ChainInfoCmd),
 
     /// Validate blocks.
     CheckBlock(sc_cli::CheckBlockCmd),
@@ -81,15 +65,18 @@ pub enum Subcommand {
     /// Import blocks.
     ImportBlocks(sc_cli::ImportBlocksCmd),
 
+    /// Key management cli utilities
+    #[command(subcommand)]
+    Key(sc_cli::KeySubcommand),
+
     /// Remove the whole chain.
     PurgeChain(sc_cli::PurgeChainCmd),
 
     /// Revert the chain to a previous state.
     Revert(sc_cli::RevertCmd),
 
-    /// Sub-commands concerned with benchmarking.
-    #[command(subcommand)]
-    Benchmark(frame_benchmarking_cli::BenchmarkCmd),
+    /// Setup madara node
+    Setup(SetupCmd),
 
     /// Try some command against runtime state.
     #[cfg(feature = "try-runtime")]
@@ -98,7 +85,4 @@ pub enum Subcommand {
     /// Try some command against runtime state. Note: `try-runtime` feature must be enabled.
     #[cfg(not(feature = "try-runtime"))]
     TryRuntime,
-
-    /// Db meta columns information.
-    ChainInfo(sc_cli::ChainInfoCmd),
 }

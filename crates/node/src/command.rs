@@ -4,26 +4,16 @@ use mc_config::init_config;
 use sc_cli::{ChainSpec, RpcMethods, RuntimeVersion, SubstrateCli};
 
 use crate::benchmarking::{inherent_benchmark_data, RemarkBuilder};
-use crate::cli::{Cli, Subcommand, Testnet};
+use crate::cli::{Cli, Subcommand};
+use crate::commands::run_node;
+use crate::constants::DEV_CHAIN_ID;
+#[cfg(feature = "sharingan")]
+use crate::constants::SHARINGAN_CHAIN_ID;
 use crate::{chain_spec, service};
-
-fn copy_chain_spec(madara_path: String) {
-    let mut src = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    src.push("chain-specs");
-    let mut dst = std::path::PathBuf::from(madara_path);
-    dst.push("chain-specs");
-    std::fs::create_dir_all(&dst).unwrap();
-    for file in std::fs::read_dir(src).unwrap() {
-        let file = file.unwrap();
-        let mut dst = dst.clone();
-        dst.push(file.file_name());
-        std::fs::copy(file.path(), dst).unwrap();
-    }
-}
 
 impl SubstrateCli for Cli {
     fn impl_name() -> String {
-        "Substrate Node".into()
+        "Madara Node".into()
     }
 
     fn impl_version() -> String {
@@ -39,21 +29,29 @@ impl SubstrateCli for Cli {
     }
 
     fn support_url() -> String {
-        "support.anonymous.an".into()
+        "madara.zone".into()
     }
 
     fn copyright_start_year() -> i32 {
         2017
     }
 
-    fn load_spec(&self, id: &str) -> Result<Box<dyn sc_service::ChainSpec>, String> {
+    fn load_spec(&self, id: &str) -> Result<Box<dyn ChainSpec>, String> {
         Ok(match id {
-            "dev" => {
-                let enable_manual_seal = self.run.sealing.map(|_| true);
-                Box::new(chain_spec::development_config(enable_manual_seal)?)
+            DEV_CHAIN_ID => {
+                let sealing = self.run.sealing.map(Into::into).unwrap_or_default();
+                let base_path = self.run.base_path().map_err(|e| e.to_string())?;
+                Box::new(chain_spec::development_config(sealing, base_path)?)
             }
-            "" | "local" | "madara-local" => Box::new(chain_spec::local_testnet_config()?),
-            path => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path))?),
+            #[cfg(feature = "sharingan")]
+            SHARINGAN_CHAIN_ID => Box::new(chain_spec::ChainSpec::from_json_bytes(
+                &include_bytes!("../../../configs/chain-specs/testnet-sharingan-raw.json")[..],
+            )?),
+            "" | "local" | "madara-local" => {
+                let base_path = self.run.base_path().map_err(|e| e.to_string())?;
+                Box::new(chain_spec::local_testnet_config(base_path, id)?)
+            }
+            path_or_url => Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path_or_url))?),
         })
     }
 
@@ -64,50 +62,50 @@ impl SubstrateCli for Cli {
 
 /// Parse and run command line arguments
 pub fn run() -> sc_cli::Result<()> {
-    let mut cli = Cli::from_args();
+    let cli = Cli::from_args();
 
-    match &cli.subcommand {
-        Some(Subcommand::Key(cmd)) => cmd.run(&cli),
-        Some(Subcommand::BuildSpec(cmd)) => {
+    match cli.subcommand {
+        Some(Subcommand::Key(ref cmd)) => cmd.run(&cli),
+        Some(Subcommand::BuildSpec(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.sync_run(|config| cmd.run(config.chain_spec, config.network))
         }
-        Some(Subcommand::CheckBlock(cmd)) => {
+        Some(Subcommand::CheckBlock(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.async_run(|mut config| {
-                let (client, _, import_queue, task_manager, _) = service::new_chain_ops(&mut config, &cli)?;
+                let (client, _, import_queue, task_manager, _) = service::new_chain_ops(&mut config, cli.run.cache)?;
                 Ok((cmd.run(client, import_queue), task_manager))
             })
         }
-        Some(Subcommand::ExportBlocks(cmd)) => {
+        Some(Subcommand::ExportBlocks(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.async_run(|mut config| {
-                let (client, _, _, task_manager, _) = service::new_chain_ops(&mut config, &cli)?;
+                let (client, _, _, task_manager, _) = service::new_chain_ops(&mut config, cli.run.cache)?;
                 Ok((cmd.run(client, config.database), task_manager))
             })
         }
-        Some(Subcommand::ExportState(cmd)) => {
+        Some(Subcommand::ExportState(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.async_run(|mut config| {
-                let (client, _, _, task_manager, _) = service::new_chain_ops(&mut config, &cli)?;
+                let (client, _, _, task_manager, _) = service::new_chain_ops(&mut config, cli.run.cache)?;
                 Ok((cmd.run(client, config.chain_spec), task_manager))
             })
         }
-        Some(Subcommand::ImportBlocks(cmd)) => {
+        Some(Subcommand::ImportBlocks(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.async_run(|mut config| {
-                let (client, _, import_queue, task_manager, _) = service::new_chain_ops(&mut config, &cli)?;
+                let (client, _, import_queue, task_manager, _) = service::new_chain_ops(&mut config, cli.run.cache)?;
                 Ok((cmd.run(client, import_queue), task_manager))
             })
         }
-        Some(Subcommand::PurgeChain(cmd)) => {
+        Some(Subcommand::PurgeChain(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.sync_run(|config| cmd.run(config.database))
         }
-        Some(Subcommand::Revert(cmd)) => {
+        Some(Subcommand::Revert(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.async_run(|mut config| {
-                let (client, backend, _, task_manager, _) = service::new_chain_ops(&mut config, &cli)?;
+                let (client, backend, _, task_manager, _) = service::new_chain_ops(&mut config, cli.run.cache)?;
                 let aux_revert = Box::new(|client, _, blocks| {
                     sc_consensus_grandpa::revert(client, blocks)?;
                     Ok(())
@@ -115,7 +113,7 @@ pub fn run() -> sc_cli::Result<()> {
                 Ok((cmd.run(client, backend, Some(aux_revert)), task_manager))
             })
         }
-        Some(Subcommand::Benchmark(cmd)) => {
+        Some(Subcommand::Benchmark(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
 
             runner.sync_run(|mut config| {
@@ -132,7 +130,7 @@ pub fn run() -> sc_cli::Result<()> {
                         cmd.run::<Block, service::ExecutorDispatch>(config)
                     }
                     BenchmarkCmd::Block(cmd) => {
-                        let (client, _, _, _, _) = service::new_chain_ops(&mut config, &cli)?;
+                        let (client, _, _, _, _) = service::new_chain_ops(&mut config, cli.run.cache)?;
                         cmd.run(client)
                     }
                     #[cfg(not(feature = "runtime-benchmarks"))]
@@ -148,13 +146,13 @@ pub fn run() -> sc_cli::Result<()> {
                         cmd.run(config, client, db, storage)
                     }
                     BenchmarkCmd::Overhead(cmd) => {
-                        let (client, _, _, _, _) = service::new_chain_ops(&mut config, &cli)?;
+                        let (client, _, _, _, _) = service::new_chain_ops(&mut config, cli.run.cache)?;
                         let ext_builder = RemarkBuilder::new(client.clone());
 
                         cmd.run(config, client, inherent_benchmark_data()?, Vec::new(), &ext_builder)
                     }
                     BenchmarkCmd::Extrinsic(cmd) => {
-                        let (client, _, _, _, _) = service::new_chain_ops(&mut config, &cli)?;
+                        let (client, _, _, _, _) = service::new_chain_ops(&mut config, cli.run.cache)?;
                         // Register the *Remark* builder.
                         let ext_factory = ExtrinsicFactory(vec![Box::new(RemarkBuilder::new(client.clone()))]);
 
@@ -180,49 +178,51 @@ pub fn run() -> sc_cli::Result<()> {
         Some(Subcommand::TryRuntime) => Err("TryRuntime wasn't enabled when building the node. You can enable it \
                                              with `--features try-runtime`."
             .into()),
-        Some(Subcommand::ChainInfo(cmd)) => {
+        Some(Subcommand::ChainInfo(ref cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.sync_run(|config| cmd.run::<Block>(&config))
         }
-        None => {
-            // when using the --dev flag, every future config should be ignored
-            let madara_path = if cli.run.madara_path.is_some() {
-                cli.run.madara_path.clone().unwrap().to_str().unwrap().to_string()
-            } else {
-                let home_path = std::env::var("HOME").unwrap_or(std::env::var("USERPROFILE").unwrap_or(".".into()));
-                format!("{}/.madara", home_path)
-            };
+        // None => {
+        //     // when using the --dev flag, every future config should be ignored
+        //     let madara_path = if cli.run.madara_path.is_some() {
+        //         cli.run.madara_path.clone().unwrap().to_str().unwrap().to_string()
+        //     } else {
+        //         let home_path = std::env::var("HOME").unwrap_or(std::env::var("USERPROFILE").unwrap_or(".".into()));
+        //         format!("{}/.madara", home_path)
+        //     };
 
-            init_config(&madara_path);
+        //     init_config(&madara_path);
 
-            if !cli.run.run_cmd.shared_params.dev {
-                cli.run.run_cmd.network_params.node_key_params.node_key_file =
-                    Some((madara_path.clone() + "/p2p-key.ed25519").into());
-                cli.run.run_cmd.shared_params.base_path = Some((madara_path.clone()).into());
+        //     if !cli.run.run_cmd.shared_params.dev {
+        //         cli.run.run_cmd.network_params.node_key_params.node_key_file =
+        //             Some((madara_path.clone() + "/p2p-key.ed25519").into());
+        //         cli.run.run_cmd.shared_params.base_path = Some((madara_path.clone()).into());
 
-                if cli.run.testnet.is_some() {
-                    copy_chain_spec(madara_path.clone());
+        //         if cli.run.testnet.is_some() {
+        //             copy_chain_spec(madara_path.clone());
 
-                    match cli.run.testnet {
-                        Some(Testnet::Local) => {
-                            cli.run.run_cmd.shared_params.chain = Some(madara_path + "/chain-specs/local-raw.json");
-                        }
-                        Some(Testnet::Sharingan) => {
-                            cli.run.run_cmd.shared_params.chain =
-                                Some(madara_path + "/chain-specs/testnet-sharingan-raw.json");
-                        }
-                        None => {}
-                    };
+        //             match cli.run.testnet {
+        //                 Some(Testnet::Local) => {
+        //                     cli.run.run_cmd.shared_params.chain = Some(madara_path + "/chain-specs/local-raw.json");
+        //                 }
+        //                 Some(Testnet::Sharingan) => {
+        //                     cli.run.run_cmd.shared_params.chain =
+        //                         Some(madara_path + "/chain-specs/testnet-sharingan-raw.json");
+        //                 }
+        //                 None => {}
+        //             };
 
-                    cli.run.run_cmd.rpc_external = true;
-                    cli.run.run_cmd.rpc_methods = RpcMethods::Unsafe;
-                }
-            }
+        //             cli.run.run_cmd.rpc_external = true;
+        //             cli.run.run_cmd.rpc_methods = RpcMethods::Unsafe;
+        //         }
+        //     }
 
-            let runner = cli.create_runner(&cli.run.run_cmd)?;
-            runner.run_node_until_exit(|config| async move {
-                service::new_full(config, cli).map_err(sc_cli::Error::Service)
-            })
-        }
+        //     let runner = cli.create_runner(&cli.run.run_cmd)?;
+        //     runner.run_node_until_exit(|config| async move {
+        //         service::new_full(config, cli).map_err(sc_cli::Error::Service)
+        //     })
+        // }
+        Some(Subcommand::Setup(ref cmd)) => cmd.run(),
+        None => run_node(cli),
     }
 }

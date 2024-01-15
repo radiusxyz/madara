@@ -1,21 +1,15 @@
 //! Starknet pallet custom types.
 use blockifier::execution::contract_class::ContractClass;
-use mp_starknet::crypto::commitment::StateCommitmentTree;
-use mp_starknet::crypto::hash::pedersen::PedersenHasher;
-use mp_starknet::crypto::hash::poseidon::PoseidonHasher;
-use mp_starknet::execution::types::{ContractAddressWrapper, Felt252Wrapper};
+use mp_felt::Felt252Wrapper;
 use sp_core::ConstU32;
-use starknet_api::api_core::ClassHash;
+use sp_std::vec::Vec;
+use starknet_api::api_core::{ClassHash, ContractAddress};
+use starknet_api::state::StorageKey;
 use starknet_api::stdlib::collections::HashMap;
-
-/// Nonce of a Starknet transaction.
-pub type NonceWrapper = Felt252Wrapper;
-
-/// Storage Key
-pub type StorageKeyWrapper = Felt252Wrapper;
+use starknet_api::transaction::{Event, Fee, MessageToL1, TransactionHash};
 
 /// Contract Storage Key
-pub type ContractStorageKeyWrapper = (ContractAddressWrapper, StorageKeyWrapper);
+pub type ContractStorageKey = (ContractAddress, StorageKey);
 
 /// Make this configurable. Max transaction/block
 pub type MaxTransactionsPendingBlock = ConstU32<1073741824>;
@@ -23,38 +17,16 @@ pub type MaxTransactionsPendingBlock = ConstU32<1073741824>;
 pub type ContractClassMapping = HashMap<ClassHash, ContractClass>;
 
 /// Type wrapper for a storage slot.
-pub type StorageSlotWrapper = (StorageKeyWrapper, Felt252Wrapper);
-
-/// State trie type.
-pub type StateTrie = StateCommitmentTree<PedersenHasher>;
+pub type StorageSlot = (StorageKey, Felt252Wrapper);
 
 /// Declare Transaction Output
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    scale_codec::Encode,
-    scale_codec::Decode,
-    scale_info::TypeInfo,
-    scale_codec::MaxEncodedLen,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 pub struct DeployAccountTransactionOutput {
     /// Transaction hash
     pub transaction_hash: Felt252Wrapper,
     /// Contract Address
-    pub contract_address: ContractAddressWrapper,
-}
-
-/// State Commitments
-/// TODO: Make hashers configurable in runtime config
-#[derive(Default, Clone, scale_codec::Encode, scale_codec::Decode, scale_info::TypeInfo)]
-pub struct StateCommitments {
-    /// Storage Commitment
-    pub storage_commitment: StateCommitmentTree<PedersenHasher>,
-    /// Class Commitment
-    pub class_commitment: StateCommitmentTree<PoseidonHasher>,
+    pub contract_address: ContractAddress,
 }
 
 /// Build invoke transaction for transfer utils
@@ -65,4 +37,13 @@ pub struct BuildTransferInvokeTransaction {
     pub amount_low: Felt252Wrapper,
     pub amount_high: Felt252Wrapper,
     pub nonce: Felt252Wrapper,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, parity_scale_codec::Encode, parity_scale_codec::Decode, scale_info::TypeInfo)]
+#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+pub struct TransactionOutput {
+    pub transaction_hash: TransactionHash,
+    pub actual_fee: Fee,
+    pub messages_sent: Vec<MessageToL1>,
+    pub events: Vec<Event>,
 }
