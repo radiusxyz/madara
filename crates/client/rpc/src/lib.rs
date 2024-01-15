@@ -482,32 +482,29 @@ where
             convert_transaction(self.client.clone(), best_block_hash, transaction.clone(), TxType::Invoke).await?;
 
         let block_height = self.current_block_number()? + 1;
-        let epool = self.pool.encrypted_pool().clone();
 
-        // // If not using encrypted mempool, run without order
-        // Todo(jaemin): add flag to enable/disable encrypted mempool
-        // if some_flag {
-        //     submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
-        //     return Ok(InvokeTransactionResult { transaction_hash: transaction.hash.into() })
-        // }
+        let mut order = None;
         {
+            let epool = self.pool.encrypted_pool().clone();
             let mut locked_epool = epool.lock().await;
-            let txs = locked_epool.initialize_if_not_exist(block_height);
-            if txs.is_closed() {
-                log::info!("{} is closed.. push on temporary pool on {}", block_height - 1, block_height);
-
-                let next_txs = locked_epool.initialize_if_not_exist(block_height + 1);
-
-                let order = next_txs.get_order();
-
-                next_txs.add_tx_to_temporary_pool(order, transaction.clone());
-            } else {
-                txs.increase_not_encrypted_cnt();
-                let order = txs.get_order();
-
-                submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
+            if locked_epool.is_enabled() {
+                let txs = locked_epool.initialize_if_not_exist(block_height);
+                if txs.is_closed() {
+                    log::info!("{} is closed.. push on temporary pool on {}", block_height - 1, block_height);
+                    let next_txs = locked_epool.initialize_if_not_exist(block_height + 1);
+                    order = Some(next_txs.get_order());
+                    next_txs.add_tx_to_temporary_pool(next_txs.get_order(), transaction.clone());
+                } else {
+                    txs.increase_not_encrypted_cnt();
+                    order = Some(txs.get_order());
+                }
             }
-        };
+        }
+        if let Some(order) = order {
+            submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
+        } else {
+            submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
+        }
 
         Ok(InvokeTransactionResult { transaction_hash: transaction.hash.into() })
     }
@@ -526,20 +523,6 @@ where
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTransaction,
     ) -> RpcResult<DeployAccountTransactionResult> {
-        let epool = self.pool.encrypted_pool().clone();
-
-        let mut is_epool_enabled = false;
-
-        if let Ok(block_height) = self.current_block_number() {
-            let mut locked_epool = epool.lock().await;
-            is_epool_enabled = locked_epool.is_enabled();
-            if is_epool_enabled {
-                log::info!("Deploy account encrypted transaction");
-                let txs = locked_epool.initialize_if_not_exist(block_height);
-                txs.increase_order();
-            }
-        }
-
         let best_block_hash = self.client.info().best_hash;
         let chain_id = Felt252Wrapper(self.chain_id()?.0);
 
@@ -558,30 +541,32 @@ where
             convert_transaction(self.client.clone(), best_block_hash, transaction.clone(), TxType::DeployAccount)
                 .await?;
 
-        let deploy_account_tx_res = DeployAccountTransactionResult {
-            transaction_hash: transaction.hash.into(),
-            contract_address: transaction.sender_address.into(),
-        };
-
-        if !is_epool_enabled {
-            log::info!("Submit extrinsic without order");
-            submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
-
-            return Ok(deploy_account_tx_res);
+        let block_height = self.current_block_number()?;
+        let mut order = None;
+        {
+            let epool = self.pool.encrypted_pool().clone();
+            let mut locked_epool = epool.lock().await;
+            if locked_epool.is_enabled() {
+                log::info!("Deploy account encrypted transaction");
+                let txs = locked_epool.initialize_if_not_exist(block_height);
+                txs.increase_order();
+                txs.increase_not_encrypted_cnt();
+                order = Some(txs.get_order() - 1);
+            }
         }
 
-        let block_height = self.current_block_number()? + 1;
-        let epool = self.pool.encrypted_pool().clone();
+        if let Some(order) = order {
+            log::info!("Submit extrinsic with order");
+            submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
+        } else {
+            log::info!("Submit extrinsic without order");
+            submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
+        }
 
-        let mut locked_epool = epool.lock().await;
-        let txs = locked_epool.initialize_if_not_exist(block_height);
-        let order = txs.get_order();
-        txs.increase_not_encrypted_cnt();
-
-        log::info!("Submit extrinsic with order");
-        submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
-
-        Ok(deploy_account_tx_res)
+        Ok(DeployAccountTransactionResult {
+            transaction_hash: transaction.hash.into(),
+            contract_address: transaction.sender_address.into(),
+        })
     }
 
     /// Estimate the fee associated with transaction
@@ -821,20 +806,6 @@ where
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
     ) -> RpcResult<DeclareTransactionResult> {
-        let epool = self.pool.encrypted_pool().clone();
-
-        let mut is_epool_enabled = false;
-
-        if let Ok(block_height) = self.current_block_number() {
-            let mut locked_epool = epool.lock().await;
-            is_epool_enabled = locked_epool.is_enabled();
-            if is_epool_enabled {
-                log::info!("Add declare encrypted transaction");
-                let txs = locked_epool.initialize_if_not_exist(block_height);
-                txs.increase_order();
-            }
-        }
-
         let best_block_hash = self.client.info().best_hash;
         let chain_id = Felt252Wrapper(self.chain_id()?.0);
 
@@ -858,30 +829,32 @@ where
         let extrinsic =
             convert_transaction(self.client.clone(), best_block_hash, transaction.clone(), TxType::Declare).await?;
 
-        let declare_tx_res = DeclareTransactionResult {
-            transaction_hash: transaction.hash.into(),
-            class_hash: declare_tx.class_hash.into(),
-        };
-
-        if !is_epool_enabled {
-            log::info!("Submit extrinsic without order");
-            submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
-
-            return Ok(declare_tx_res);
+        let block_height = self.current_block_number()?;
+        let mut order = None;
+        {
+            let epool = self.pool.encrypted_pool().clone();
+            let mut locked_epool = epool.lock().await;
+            if locked_epool.is_enabled() {
+                log::info!("Add declare encrypted transaction");
+                let txs = locked_epool.initialize_if_not_exist(block_height);
+                txs.increase_order();
+                txs.increase_not_encrypted_cnt();
+                order = Some(txs.get_order() - 1);
+            }
         }
 
-        let block_height = self.current_block_number()? + 1;
+        if let Some(order) = order {
+            log::info!("Submit extrinsic with order");
+            submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
+        } else {
+            log::info!("Submit extrinsic without order");
+            submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
+        }
 
-        let epool = self.pool.encrypted_pool();
-        let mut locked_epool = epool.lock().await;
-        let txs = locked_epool.initialize_if_not_exist(block_height);
-        let order = txs.get_order();
-        txs.increase_not_encrypted_cnt();
-
-        log::info!("Submit extrinsic with order");
-        submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
-
-        Ok(declare_tx_res)
+        Ok(DeclareTransactionResult {
+            transaction_hash: transaction.hash.into(),
+            class_hash: declare_tx.class_hash.into(),
+        })
     }
 
     /// Returns a transaction details from it's hash.
@@ -1092,7 +1065,7 @@ where
         Ok(RpcGetProofOutput { state_commitment, class_commitment, contract_proof, contract_data: Some(contract_data) })
     }
 
-    ///
+    // Todo(jaemin): To be removed. This is for testing.
     fn encrypt_invoke_transaction(
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
@@ -1153,7 +1126,6 @@ where
 
         let order = {
             let mut locked_epool = epool.lock().await;
-
             if !locked_epool.is_enabled() {
                 return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
             }
@@ -1170,8 +1142,8 @@ where
 
             txs.invoke_encrypted_tx(encrypted_invoke_transaction.clone());
 
-            let (tx_cnt, txs_order) = (txs.encrypted_txs_len(), txs.get_order());
-            log::info!("1. added length {} {}", tx_cnt, txs_order);
+            let txs_order = txs.get_order();
+            log::info!("1. added length {} {}", txs.encrypted_txs_len(), txs_order);
 
             let tx_cnt = locked_epool
                 .get_txs(block_height)
@@ -1335,7 +1307,6 @@ where
         let transaction_hash = transaction.hash;
 
         let extrinsic = convert_transaction(self.client.clone(), best_block_hash, transaction, TxType::Invoke).await?;
-
         submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, decryption_info.order).await?;
 
         Ok(ProvideDecryptionKeyResponse { transaction_hash: transaction_hash.into() })
@@ -1357,20 +1328,6 @@ where
         StarknetRpcApiError::InternalServerError
     })
 }
-// async fn submit_extrinsic<P>(
-//     pool: Arc<P>,
-//     best_block_hash: <<P as TransactionPool>::Block as BlockT>::Hash,
-//     extrinsic: <<P as TransactionPool>::Block as BlockT>::Extrinsic,
-// ) -> Result<<P as TransactionPool>::Hash, StarknetRpcApiError>
-// where
-//     P: EncryptedTransactionPool + 'static,
-//     <<P as TransactionPool>::Block as BlockT>::Extrinsic: Send + Sync + 'static,
-// {
-//     pool.submit_one(&SPBlockId::hash(best_block_hash), TX_SOURCE, extrinsic).await.map_err(|e| {
-//         error!("Failed to submit extrinsic: {:?}", e);
-//         StarknetRpcApiError::InternalServerError
-//     })
-// }
 
 pub async fn submit_extrinsic_with_order<P, B>(
     pool: Arc<P>,

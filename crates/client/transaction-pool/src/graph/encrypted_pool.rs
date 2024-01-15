@@ -204,7 +204,6 @@ impl EncryptedPool {
             .txs
             .get_mut(&block_height)
             .ok_or(Error::Retrieval(format!("Failed to find block height: {}", block_height)))?;
-
         if !txs.encrypted_pool.is_empty() {
             let txs_string = serde_json::to_string(&txs.encrypted_pool.values().cloned().collect::<Vec<_>>())?;
             let db = SYNC_DB
