@@ -15,7 +15,6 @@ members = [
   "crates/primitives/storage",
   "crates/primitives/commitments",
   "crates/primitives/chain-id",
-  "crates/client/block-proposer",
   "crates/client/db",
   "crates/client/rpc-core",
   "crates/client/rpc",
@@ -44,7 +43,6 @@ default-members = [
   "crates/primitives/storage",
   "crates/primitives/commitments",
   "crates/primitives/chain-id",
-  "crates/client/block-proposer",
   "crates/client/db",
   "crates/client/rpc-core",
   "crates/client/rpc",
@@ -150,6 +148,7 @@ pallet-timestamp = { default-features = false, git = "https://github.com/parityt
 pallet-starknet = { path = "crates/pallets/starknet", default-features = false }
 
 # Madara primtitives
+mp-starknet = { path = "crates/primitives/starknet", default-features = false }
 mp-digest-log = { path = "crates/primitives/digest-log", default-features = false }
 mp-block = { path = "crates/primitives/block", default-features = false }
 mp-fee = { path = "crates/primitives/fee", default-features = false }
