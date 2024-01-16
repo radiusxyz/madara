@@ -10,7 +10,14 @@ use futures::future;
 use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi};
-use mc_block_proposer::ProposerFactory;
+use mc_config::config_map;
+use mc_data_availability::avail::config::AvailConfig;
+use mc_data_availability::avail::AvailClient;
+use mc_data_availability::celestia::config::CelestiaConfig;
+use mc_data_availability::celestia::CelestiaClient;
+use mc_data_availability::ethereum::config::EthereumConfig;
+use mc_data_availability::ethereum::EthereumClient;
+use mc_data_availability::{DaClient, DaLayer, DataAvailabilityWorker};
 use mc_mapping_sync::MappingSyncWorker;
 use mc_storage::overrides_handle;
 use mc_sync_block::sync_with_da;
@@ -250,7 +257,12 @@ where
 }
 
 /// Builds a new service for a full client.
-pub fn new_full(config: Configuration, sealing: Option<Sealing>) -> Result<TaskManager, ServiceError> {
+pub fn new_full(
+    config: Configuration,
+    sealing: Option<Sealing>,
+    da_layer: Option<(DaLayer, PathBuf)>,
+    cli: Cli,
+) -> Result<TaskManager, ServiceError> {
     let build_import_queue =
         if sealing.is_some() { build_manual_seal_import_queue } else { build_aura_grandpa_import_queue };
 
@@ -633,7 +645,7 @@ type ChainOpsResult = Result<
     ServiceError,
 >;
 
-pub fn new_chain_ops(mut config: &mut Configuration) -> ChainOpsResult {
+pub fn new_chain_ops(config: &mut Configuration, cli: &Cli) -> ChainOpsResult {
     config.keystore = sc_service::config::KeystoreConfig::InMemory;
     let sc_service::PartialComponents { client, backend, import_queue, task_manager, other, .. } =
         new_partial::<_>(config, cli, build_aura_grandpa_import_queue)?;

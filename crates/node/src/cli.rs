@@ -26,9 +26,9 @@ pub struct Cli {
 
     #[clap(flatten)]
     pub run: ExtendedRunCmd,
-    // /// Choose sealing method.
-    // #[arg(long, value_enum, ignore_case = true)]
-    // pub sealing: Option<Sealing>,
+    /// Choose sealing method.
+    #[arg(long, value_enum, ignore_case = true)]
+    pub sealing: Option<Sealing>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -46,7 +46,7 @@ pub struct ExtendedRunCmd {
     pub encrypted_mempool: bool,
 
     #[clap(long)]
-    pub using_external_decryptor: bool
+    pub using_external_decryptor: bool,
 
     #[clap(long)]
     pub chain_spec_url: Option<String>,

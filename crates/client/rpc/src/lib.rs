@@ -17,12 +17,16 @@ use errors::StarknetRpcApiError;
 use frame_support::bounded_vec;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
-use mc_rpc_core::types::{ContractData, RpcGetProofInput, RpcGetProofOutput};
+use mc_rpc_core::types::{
+    ContractData, DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse,
+    ProvideDecryptionKeyResponse, RpcGetProofInput, RpcGetProofOutput,
+};
 pub use mc_rpc_core::utils::*;
 use mc_rpc_core::Felt;
 pub use mc_rpc_core::StarknetRpcApiServer;
 use mc_storage::OverrideHandle;
-use mc_transaction_pool::{ChainApi, Pool};
+use mc_transaction_pool::decryptor::Decryptor;
+use mc_transaction_pool::{ChainApi, EncryptedTransactionPool, Pool};
 use mp_starknet::crypto::merkle_patricia_tree::merkle_tree::ProofNode;
 use mp_starknet::execution::types::Felt252Wrapper;
 use mp_starknet::traits::hash::HasherT;
@@ -952,122 +956,251 @@ where
         }
     }
 
-    /// This endpoint aims to do the same as [EIP-1186](https://eips.ethereum.org/EIPS/eip-1186)
-    /// It should provide all the data necessary for someone to verify some storage
-    /// within a starknet smart contract thanks to its merkle proof.
-    ///
-    /// It takes advantages from the facts that the whole state is built as 2 tries:
-    /// 1. The contracts trie : stores state data of the contracts based on their address
-    /// 2. The classes trie : associates class hashes with classes
-    ///
-    /// More information on Starknet's state [here](https://docs.starknet.io/documentation/architecture_and_concepts/State/starknet-state/)
-    ///
-    /// A storage proof is *just* a merkle proof of the subtree which you can find the root within
-    /// the contracts trie
-    ///
-    /// This implementation is highly inspired by previous work on [pathfinder](https://github.com/eqlabs/pathfinder/pull/726)
-    fn get_proof(&self, get_proof_input: RpcGetProofInput) -> RpcResult<RpcGetProofOutput> {
-        if get_proof_input.keys.len() > MAX_STORAGE_PROOF_KEYS_BY_QUERY {
-            error!(
-                "Too many keys requested! limit: {:?},
-				requested: {:?}",
-                MAX_STORAGE_PROOF_KEYS_BY_QUERY,
-                get_proof_input.keys.len() as u32
-            );
-            return Err(StarknetRpcApiError::ProofLimitExceeded.into());
-        }
+    // Todo(jaemin): To be removed. This is for testing.
+    fn encrypt_invoke_transaction(
+        &self,
+        invoke_transaction: BroadcastedInvokeTransaction,
+        t: u64, // Time - The number of calculations for how much time should be taken in VDF
+    ) -> RpcResult<EncryptedInvokeTransactionResponse> {
+        let base = 10; // Expression base (e.g. 10 == decimal / 16 == hex)
+        let lambda = 2048; // N's bits (ex. RSA-2048 => lambda = 2048)
+        let vdf: VDF = VDF::new(lambda, base);
 
-        let substrate_block_hash =
-            self.substrate_block_hash_from_starknet_block(get_proof_input.block_id).map_err(|e| {
-                error!("'{e}'");
-                StarknetRpcApiError::BlockNotFound
-            })?;
+        let param = vdf.setup(t); // Generate parameters (it returns value as json string)
+        let params: ReturnData = serde_json::from_str(param.as_str())?; // Parsing parameters
 
-        let block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).unwrap_or_default();
+        let invoke_tx = InvokeTransaction::try_from(invoke_transaction).map_err(|e| {
+            error!("{e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+        let invoke_tx_str: String = serde_json::to_string(&invoke_tx)?;
 
-        let global_state_root = block.header().global_state_root;
+        // 1. Use trapdoor
+        let y = vdf.evaluate_with_trapdoor(params.t, params.g.clone(), params.n.clone(), params.remainder.clone());
+        let encryption_key = SequencerPoseidonEncryption::calculate_secret_key(y.as_bytes());
+        let (encrypted_data, nonce, _, _) = SequencerPoseidonEncryption::new().encrypt(invoke_tx_str, encryption_key);
 
-        let mut state_commitments = self
-            .overrides
-            .for_block_hash(self.client.as_ref(), substrate_block_hash)
-            .state_commitments(substrate_block_hash)
-            .ok_or_else(|| {
-                error!("Failed to retrieve state commitments");
+        Ok(EncryptedInvokeTransactionResponse {
+            encrypted_invoke_transaction: EncryptedInvokeTransaction {
+                encrypted_data,
+                nonce: format!("{nonce:x}"),
+                t,
+                g: params.g.clone(),
+                n: params.n,
+            },
+            decryption_key: y,
+        })
+    }
+
+    async fn decrypt_encrypted_invoke_transaction(
+        &self,
+        encrypted_invoke_transaction: EncryptedInvokeTransaction,
+        decryption_key: Option<String>,
+    ) -> RpcResult<InvokeTransaction> {
+        Decryptor::default()
+            .decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, decryption_key)
+            .await
+            .map_err(|e| {
+                error!("{e}");
+                StarknetRpcApiError::InternalServerError.into()
+            })
+    }
+
+    async fn add_encrypted_invoke_transaction(
+        &self,
+        encrypted_invoke_transaction: EncryptedInvokeTransaction,
+    ) -> RpcResult<EncryptedMempoolTransactionResponse> {
+        let mut block_height = self.current_block_number()? + 1;
+
+        let epool = self.pool.encrypted_pool();
+
+        let order = {
+            let mut locked_epool = epool.lock().await;
+            if !locked_epool.is_enabled() {
+                return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
+            }
+
+            let txs = locked_epool.new_block(block_height);
+            log::info!("{} : closed?", block_height);
+
+            if txs.is_closed() {
+                block_height += 1;
+                log::info!("closed!, push at {}", block_height);
+            } else {
+                log::info!("still open");
+            }
+
+            txs.invoke_encrypted_tx(encrypted_invoke_transaction.clone());
+
+            let txs_order = txs.get_order();
+            log::info!("1. added length {} {}", txs.encrypted_txs_len(), txs_order);
+
+            let tx_cnt = locked_epool
+                .get_txs(block_height)
+                .map_err(|_| {
+                    error!("Failed to find get tx {}", block_height);
+                    StarknetRpcApiError::InternalServerError
+                })?
+                .encrypted_txs_len();
+            log::info!("2. added length {}", tx_cnt);
+
+            txs_order - 1
+        };
+
+        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+
+        let best_block_hash = self.client.info().best_hash;
+        let client = self.client.clone();
+        let pool = self.pool.clone();
+
+        // Generate commitment
+
+        // 1. Get sequencer private key
+        let config_map = config_map();
+        let sequencer_private_key = config_map.get_string("sequencer_private_key").map_err(|_| {
+            error!("sequencer_private_key must be set");
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        // 2. Make random FieldElement for making k to sign
+        let mut rng = OsRng;
+        let lower_bound = BigInt::from(0);
+        let upper_bound = BigInt::parse_bytes(FieldElement::MAX.to_string().as_bytes(), 10).ok_or_else(|| {
+            error!("Failed to parse BigInt {}", FieldElement::MAX);
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        let hex_k = rng.gen_bigint_range(&lower_bound, &upper_bound).to_str_radix(16);
+        let k = FieldElement::from_str(&format!("0x{}", hex_k)).map_err(|_| {
+            error!("Failed to convert BigInt to FieldElement: 0x{}", hex_k);
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        // 3. Make message
+        let encrypted_tx_info_hash =
+            self.hasher.hash_bytes(serde_json::to_string(&encrypted_invoke_transaction)?.as_bytes());
+        let commitment =
+            self.hasher.hash_bytes(format!("{},{},{}", block_height, order, encrypted_tx_info_hash.0).as_bytes());
+
+        // 4. Sign the commitment
+        let signature = sign(
+            &FieldElement::from_str(sequencer_private_key.as_str()).map_err(|_| {
+                error!("Failed to convert sequencer private key to FieldElement: {}", sequencer_private_key);
+                StarknetRpcApiError::InternalServerError
+            })?,
+            &FieldElement::from(commitment),
+            &k,
+        )
+        .map_err(|_| {
+            error!("Failed to sign the sequencer private key {} commitment", sequencer_private_key);
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        Ok(EncryptedMempoolTransactionResponse {
+            block_number: block_height,
+            order,
+            signature: bounded_vec!(signature.r.into(), signature.s.into(), signature.v.into()),
+        })
+    }
+
+    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResponse> {
+        let config_map = config_map();
+        let sequencer_private_key_string = config_map.get_string("sequencer_private_key").map_err(|_| {
+            error!("sequencer private key must be set");
+            StarknetRpcApiError::InternalServerError
+        })?;
+        let sequencer_private_key = FieldElement::from_str(sequencer_private_key_string.as_str()).map_err(|_| {
+            error!("Failed to convert sequencer private key to FieldElement: {sequencer_private_key_string}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        let sequencer_public_key = get_public_key(&sequencer_private_key);
+
+        let epool = self.pool.encrypted_pool().clone();
+        let block_height = decryption_info.block_number;
+
+        let encrypted_invoke_transaction = {
+            let mut locked_epool = epool.lock().await;
+            if !locked_epool.is_enabled() {
+                return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
+            }
+
+            let txs = locked_epool.initialize_if_not_exist(block_height);
+            let encrypted_invoke_transaction = txs
+                .get_invoked_encrypted_tx(decryption_info.order)
+                .map_err(|_| {
+                    error!(
+                        "Not exist encrypted invoke transaction (block number: {}, order: {})",
+                        decryption_info.block_number, decryption_info.order
+                    );
+                    StarknetRpcApiError::InternalServerError
+                })?
+                .clone();
+
+            txs.update_received_keys(decryption_info.order);
+
+            encrypted_invoke_transaction
+        };
+
+        let encrypted_invoke_transaction_string = serde_json::to_string(&encrypted_invoke_transaction)?;
+        let encrypted_invoke_transaction_bytes = encrypted_invoke_transaction_string.as_bytes();
+        let encrypted_tx_info_hash = self.hasher.hash_bytes(encrypted_invoke_transaction_bytes);
+
+        let message =
+            format!("{},{},{}", decryption_info.block_number, decryption_info.order, encrypted_tx_info_hash.0);
+        let message_as_bytes = message.as_bytes();
+        let commitment = self.hasher.hash_bytes(message_as_bytes);
+
+        verify(
+            &sequencer_public_key,
+            &FieldElement::from(commitment),
+            &FieldElement::from(decryption_info.signature[0]),
+            &FieldElement::from(decryption_info.signature[1]),
+        )
+        .map_err(|e| {
+            error!("Failed to verify the signature: {:?}", e);
+            StarknetRpcApiError::InternalServerError
+        })
+        .and_then(|verified| {
+            verified.then_some(()).ok_or_else(|| {
+                error!(
+                    "Invalid signature (block number: {}, order: {})",
+                    decryption_info.block_number, decryption_info.order
+                );
+                StarknetRpcApiError::InternalServerError
+            })
+        })?;
+
+        let best_block_hash = self.client.info().best_hash;
+        let invoke_tx = Decryptor::default()
+            .decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, Some(decryption_info.decryption_key))
+            .await
+            .map_err(|e| {
+                error!("Failed to decrypt encrypted invoke transaction: {e}");
                 StarknetRpcApiError::InternalServerError
             })?;
 
-        let class_commitment: FieldElement = state_commitments.class_commitment.commit().into();
-        let storage_commitment: FieldElement = state_commitments.storage_commitment.commit().into();
+        {
+            let mut locked_epool = epool.lock().await;
+            locked_epool
+                .txs
+                .get_mut(&block_height)
+                .ok_or_else(|| {
+                    error!("Failed to get txs for block height: {block_height}");
+                    StarknetRpcApiError::InternalServerError
+                })?
+                .increase_decrypted_cnt();
+        }
 
-        let (state_commitment, class_commitment) = if class_commitment == FieldElement::ZERO {
-            (None, None)
-        } else {
-            (Some(global_state_root.0), Some(class_commitment))
-        };
+        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+        let transaction: MPTransaction = invoke_tx.from_invoke(chain_id);
+        let transaction_hash = transaction.hash;
 
-        // Generate a proof for this contract. If the contract does not exist, this will
-        // be a "non membership" proof.
-        let contract_proof =
-            state_commitments.storage_commitment.get_proof(Felt252Wrapper(get_proof_input.contract_address));
+        let extrinsic = convert_transaction(self.client.clone(), best_block_hash, transaction, TxType::Invoke).await?;
+        submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, decryption_info.order).await?;
 
-        let contract_state_hash =
-            match state_commitments.storage_commitment.get(Felt252Wrapper(get_proof_input.contract_address)) {
-                Some(contract_state_hash) => contract_state_hash,
-                None => {
-                    // Contract not found: return the proof of non membership that we generated earlier.
-                    return Ok(RpcGetProofOutput {
-                        state_commitment,
-                        class_commitment,
-                        contract_proof,
-                        contract_data: None,
-                    });
-                }
-            };
-
-        // In theory we got some state hash in the tree that means the contract's state
-        // has been committed already so it exists and no error should be thrown.
-        // If an error is still thrown it's fine and handy for debugging.
-
-        let class_hash = self
-            .overrides
-            .for_block_hash(self.client.as_ref(), substrate_block_hash)
-            .contract_class_hash_by_address(substrate_block_hash, get_proof_input.contract_address.into())
-            .ok_or_else(|| {
-                error!("Failed to retrieve contract class hash at '{0}'", get_proof_input.contract_address);
-                StarknetRpcApiError::ContractNotFound
-            })?;
-
-        let nonce = self
-            .overrides
-            .for_block_hash(self.client.as_ref(), substrate_block_hash)
-            .nonce(substrate_block_hash, get_proof_input.contract_address.into())
-            .ok_or_else(|| {
-                error!("Failed to get nonce at '{0}'", get_proof_input.contract_address);
-                StarknetRpcApiError::ContractNotFound
-            })?;
-
-        let mut contract_state_trie = self
-            .overrides
-            .for_block_hash(self.client.as_ref(), substrate_block_hash)
-            .contract_state_trie_by_address(substrate_block_hash, get_proof_input.contract_address.into())
-            .ok_or_else(|| {
-                error!("Failed to get contract state trie at '{0}'", get_proof_input.contract_address);
-                StarknetRpcApiError::ContractNotFound
-            })?;
-
-        let storage_proofs: Vec<Vec<ProofNode>> =
-            get_proof_input.keys.iter().map(|k| contract_state_trie.get_proof(Felt252Wrapper(*k))).collect();
-
-        let contract_data = ContractData {
-            class_hash: class_hash.into(),
-            nonce: nonce.into(),
-            root: contract_state_trie.commit().into(),
-            // Currently, this is defined as 0. Might change in the future
-            contract_state_hash_version: FieldElement::ZERO,
-            storage_proofs,
-        };
-
-        Ok(RpcGetProofOutput { state_commitment, class_commitment, contract_proof, contract_data: Some(contract_data) })
+        Ok(ProvideDecryptionKeyResponse { transaction_hash: transaction_hash.into() })
     }
 }
 

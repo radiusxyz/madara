@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 mod constants;
+pub mod types;
 pub mod utils;
 
 use starknet_core::serde::unsigned_field_element::UfeHex;
@@ -140,12 +141,6 @@ pub trait StarknetRpcApi {
     /// Returns the receipt of a transaction by transaction hash.
     #[method(name = "getTransactionReceipt")]
     fn get_transaction_receipt(&self, transaction_hash: FieldElement) -> RpcResult<MaybePendingTransactionReceipt>;
-<<<<<<< HEAD
-
-    /// Returns all the necessary data to trustlessly verify storage slots for a particular
-    /// contract.
-    #[method(name = "getProof")]
-    fn get_proof(&self, get_proof_input: RpcGetProofInput) -> RpcResult<RpcGetProofOutput>;
 
     // (For testing) Encrypt Invoke Transaction
     #[method(name = "encryptInvokeTransaction")]
@@ -174,6 +169,4 @@ pub trait StarknetRpcApi {
     /// from sequencer.
     #[method(name = "provideDecryptionKey")]
     async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResponse>;
-=======
->>>>>>> sep17
 }

@@ -240,7 +240,6 @@ pub fn run() -> sc_cli::Result<()> {
             runner.sync_run(|config| cmd.run::<Block>(&config))
         }
         None => {
-<<<<<<< HEAD
             // when using the --dev flag, every future config should be ignored
             let madara_path = if cli.run.madara_path.is_some() {
                 cli.run.madara_path.clone().unwrap().to_str().unwrap().to_string()
@@ -251,11 +250,6 @@ pub fn run() -> sc_cli::Result<()> {
 
             init_config(&madara_path);
 
-            if !cli.run.run_cmd.shared_params.dev {
-                cli.run.run_cmd.network_params.node_key_params.node_key_file =
-                    Some((madara_path.clone() + "/p2p-key.ed25519").into());
-                cli.run.run_cmd.shared_params.base_path = Some((madara_path.clone()).into());
-=======
             // create a reproducible dev environment
             if cli.run.run_cmd.shared_params.dev {
                 cli.run.run_cmd.shared_params.dev = false;
@@ -263,7 +257,6 @@ pub fn run() -> sc_cli::Result<()> {
 
                 cli.run.run_cmd.force_authoring = true;
                 cli.run.run_cmd.alice = true;
->>>>>>> sep17
 
                 // we can't set `--rpc-cors=all`, so it needs to be set manually if we want to connect with external
                 // hosts
@@ -312,11 +305,8 @@ pub fn run() -> sc_cli::Result<()> {
 
             let runner = cli.create_runner(&cli.run.run_cmd)?;
             runner.run_node_until_exit(|config| async move {
-<<<<<<< HEAD
-                service::new_full(config, cli).map_err(sc_cli::Error::Service)
-=======
-                service::new_full(config, cli.sealing, da_config).map_err(sc_cli::Error::Service)
->>>>>>> sep17
+                service::new_full(config, cli.sealing, da_config, cli).map_err(sc_cli::Error::Service)
+                // service::new_full(config, cli.sealing, da_config).map_err(sc_cli::Error::Service)
             })
         }
     }
