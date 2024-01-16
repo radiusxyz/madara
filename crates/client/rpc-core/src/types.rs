@@ -1,11 +1,14 @@
 use mp_starknet::crypto::merkle_patricia_tree::merkle_tree::ProofNode;
 use mp_starknet::execution::types::Felt252Wrapper;
-use mp_starknet::transaction::types::{EncryptedInvokeTransaction, MaxArraySize};
+use mp_starknet::transaction::EncryptedInvokeTransaction;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, skip_serializing_none};
+use sp_core::ConstU32;
 use sp_runtime::BoundedVec;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_core::types::{BlockId, FieldElement};
+
+pub type MaxArraySize = ConstU32<100>;
 
 #[derive(Deserialize, Debug, PartialEq, Eq)]
 pub struct RpcGetProofInput {

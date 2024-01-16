@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use mc_sync_block::SYNC_DB;
-use mp_starknet::transaction::types::{EncryptedInvokeTransaction, Transaction};
+use mp_starknet::transaction::{EncryptedInvokeTransaction, UserTransaction};
 
 use crate::error::{Error, Result};
 
@@ -20,7 +20,7 @@ pub struct Txs {
     /// store encrypted tx
     encrypted_pool: HashMap<u64, EncryptedInvokeTransaction>,
     /// store temporary encrypted tx
-    temporary_pool: Vec<(u64, Transaction)>,
+    temporary_pool: Vec<(u64, UserTransaction)>,
     /// store specific order's key receivement.
     received_keys: HashMap<u64, bool>,
     /// decrypted tx count
@@ -83,19 +83,19 @@ impl Txs {
     }
 
     /// add tx to temporary pool
-    pub fn add_tx_to_temporary_pool(&mut self, order: u64, tx: Transaction) {
+    pub fn add_tx_to_temporary_pool(&mut self, order: u64, tx: UserTransaction) {
         self.temporary_pool.push((order, tx));
     }
 
     /// get tx from temporary pool
-    pub fn get_tx_from_temporary_pool(&mut self, index: usize) -> Result<&(u64, Transaction)> {
+    pub fn get_tx_from_temporary_pool(&mut self, index: usize) -> Result<&(u64, UserTransaction)> {
         self.temporary_pool
             .get(index)
             .ok_or(Error::Retrieval(format!("Failed to get tx from the temporary pool- index: {}", index)))
     }
 
     /// get temporary pool
-    pub fn get_temporary_pool(&self) -> &[(u64, Transaction)] {
+    pub fn get_temporary_pool(&self) -> &[(u64, UserTransaction)] {
         &self.temporary_pool
     }
 

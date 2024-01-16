@@ -9,7 +9,7 @@ mod tests;
 
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use mp_starknet::transaction::types::{EncryptedInvokeTransaction, InvokeTransaction};
+use mp_starknet::transaction::{EncryptedInvokeTransaction, InvokeTransaction};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -25,9 +25,12 @@ use starknet_core::types::{
     InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingTransactionReceipt,
     StateUpdate, SyncStatusType, Transaction,
 };
-use types::{EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse};
+pub mod types;
 
-use crate::types::{DecryptionInfo, ProvideDecryptionKeyResponse, RpcGetProofInput, RpcGetProofOutput};
+use crate::types::{
+    DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse,
+    ProvideDecryptionKeyResponse, RpcGetProofInput, RpcGetProofOutput,
+};
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
