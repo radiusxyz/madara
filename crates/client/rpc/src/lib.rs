@@ -551,7 +551,7 @@ where
         let best_block_hash = self.client.info().best_hash;
 
         let transaction: UserTransaction = invoke_transaction.try_into().map_err(|e| {
-            error!("{e}");
+            error!("Failed to convert BroadcastedInvokeTransaction to UserTransaction: {e}");
             StarknetRpcApiError::InternalServerError
         })?;
 
@@ -1322,7 +1322,7 @@ where
     })
 }
 
-pub async fn convert_transaction<C, B>(
+async fn convert_transaction<C, B>(
     client: Arc<C>,
     best_block_hash: <B as BlockT>::Hash,
     transaction: UserTransaction,

@@ -114,24 +114,6 @@ pub struct InvokeTransactionV1 {
     pub calldata: Vec<Felt252Wrapper>,
 }
 
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct InvokeTransactionV2 {
-    /// Encrypted transaction data.
-    pub encrypted_data: Vec<String>,
-
-    /// Nonce for decrypting the encrypted transaction.
-    pub nonce: String,
-
-    /// t for calculating time-lock puzzle.
-    pub t: u64,
-
-    /// g for calculating time-lock puzzle.
-    pub g: String,
-
-    /// n for calculating time-lock puzzle.
-    pub n: String,
-}
-
 /// Encrypted Invoke transaction.
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
