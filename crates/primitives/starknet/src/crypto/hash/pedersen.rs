@@ -80,7 +80,7 @@ impl HasherT for PedersenHasher {
 
 impl DefaultHasher for PedersenHasher {
     fn hasher() -> Self {
-        Self::default()
+        Self
     }
 }
 

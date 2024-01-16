@@ -16,8 +16,6 @@ use serde_with::serde_as;
 mod constants;
 pub mod utils;
 
-pub mod types;
-
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
@@ -142,6 +140,7 @@ pub trait StarknetRpcApi {
     /// Returns the receipt of a transaction by transaction hash.
     #[method(name = "getTransactionReceipt")]
     fn get_transaction_receipt(&self, transaction_hash: FieldElement) -> RpcResult<MaybePendingTransactionReceipt>;
+<<<<<<< HEAD
 
     /// Returns all the necessary data to trustlessly verify storage slots for a particular
     /// contract.
@@ -175,4 +174,6 @@ pub trait StarknetRpcApi {
     /// from sequencer.
     #[method(name = "provideDecryptionKey")]
     async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResponse>;
+=======
+>>>>>>> sep17
 }

@@ -1,6 +1,7 @@
 use core::str::FromStr;
 
 use blockifier::abi::abi_utils::selector_from_name;
+use blockifier::execution::contract_class::ContractClassV0;
 use frame_support::{bounded_vec, BoundedVec};
 use sp_core::{TypedGet, U256};
 use starknet_api::api_core::{ContractAddress, PatriciaKey};
@@ -8,13 +9,10 @@ use starknet_api::block::{BlockHash, BlockNumber};
 use starknet_api::hash::{StarkFelt, StarkHash};
 use starknet_api::patricia_key;
 use starknet_api::transaction::{
-    Event, EventContent, EventData, EventKey, Fee, InvokeTransactionOutput, TransactionHash, TransactionOutput,
-    TransactionReceipt,
+    Event, EventContent, EventData, EventKey, Fee, InvokeTransactionOutput, TransactionExecutionStatus,
+    TransactionHash, TransactionOutput, TransactionReceipt,
 };
-use starknet_core::types::{
-    BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction, BroadcastedInvokeTransactionV0,
-    BroadcastedInvokeTransactionV1, StarknetError,
-};
+use starknet_core::types::{BroadcastedDeployAccountTransaction, BroadcastedInvokeTransaction};
 use starknet_ff::FieldElement;
 
 use crate::execution::call_entrypoint_wrapper::{CallEntryPointWrapper, MaxCalldataSize};
@@ -96,6 +94,7 @@ fn test_validate_entrypoint_calldata_declare() {
             class_hash: Some(get_test_class_hash()),
             ..CallEntryPointWrapper::default()
         },
+        contract_class: Some(blockifier::execution::contract_class::ContractClass::V0(ContractClassV0::default())),
         ..Transaction::default()
     };
 
@@ -231,6 +230,7 @@ fn test_try_into_transaction_receipt_wrapper() {
             actual_fee: Fee(0),
             messages_sent: vec![],
             events: vec![event1.clone(), event2.clone()],
+            execution_status: TransactionExecutionStatus::Succeeded,
         }),
         block_hash: BlockHash(StarkFelt::new([0; 32]).unwrap()),
         block_number: BlockNumber(0),
@@ -290,6 +290,7 @@ fn test_try_into_transaction_receipt_wrapper_with_too_many_events() {
             actual_fee: Fee(0),
             messages_sent: vec![],
             events,
+            execution_status: TransactionExecutionStatus::Succeeded,
         }),
         block_hash: BlockHash(StarkFelt::new([0; 32]).unwrap()),
         block_number: BlockNumber(0),
@@ -395,30 +396,8 @@ fn test_try_into_deploy_account_transaction() {
 }
 
 #[test]
-fn test_try_invoke_txn_from_broadcasted_invoke_txn_v0() {
-    let broadcasted_invoke_txn_v0 = BroadcastedInvokeTransactionV0 {
-        max_fee: FieldElement::default(),
-        signature: vec![FieldElement::default()],
-        nonce: FieldElement::default(),
-        contract_address: FieldElement::default(),
-        entry_point_selector: FieldElement::default(),
-        calldata: vec![FieldElement::default()],
-        is_query: false,
-    };
-
-    let broadcasted_invoke_txn = BroadcastedInvokeTransaction::V0(broadcasted_invoke_txn_v0);
-    let invoke_txn = InvokeTransaction::try_from(broadcasted_invoke_txn);
-
-    assert!(invoke_txn.is_err());
-    assert!(matches!(
-        invoke_txn.unwrap_err(),
-        BroadcastedTransactionConversionErrorWrapper::StarknetError(StarknetError::FailedToReceiveTransaction)
-    ))
-}
-
-#[test]
 fn test_try_invoke_txn_from_broadcasted_invoke_txn_v1() {
-    let broadcasted_invoke_txn_v1 = BroadcastedInvokeTransactionV1 {
+    let broadcasted_invoke_txn = BroadcastedInvokeTransaction {
         max_fee: FieldElement::default(),
         nonce: FieldElement::default(),
         sender_address: FieldElement::default(),
@@ -427,7 +406,6 @@ fn test_try_invoke_txn_from_broadcasted_invoke_txn_v1() {
         is_query: false,
     };
 
-    let broadcasted_invoke_txn = BroadcastedInvokeTransaction::V1(broadcasted_invoke_txn_v1);
     let invoke_txn = InvokeTransaction::try_from(broadcasted_invoke_txn).unwrap();
 
     let expected_sig: BoundedVec<Felt252Wrapper, MaxArraySize> =
@@ -447,7 +425,7 @@ fn test_try_invoke_txn_from_broadcasted_invoke_txn_v1() {
 fn test_try_invoke_txn_from_broadcasted_invoke_txn_v1_max_sig_size() {
     let signature_size_maxed = vec![FieldElement::default(); MaxArraySize::get() as usize + 1];
 
-    let broadcasted_invoke_txn_v1 = BroadcastedInvokeTransactionV1 {
+    let broadcasted_invoke_txn = BroadcastedInvokeTransaction {
         max_fee: FieldElement::default(),
         nonce: FieldElement::default(),
         sender_address: FieldElement::default(),
@@ -456,7 +434,6 @@ fn test_try_invoke_txn_from_broadcasted_invoke_txn_v1_max_sig_size() {
         is_query: false,
     };
 
-    let broadcasted_invoke_txn = BroadcastedInvokeTransaction::V1(broadcasted_invoke_txn_v1);
     let invoke_txn = InvokeTransaction::try_from(broadcasted_invoke_txn);
 
     assert!(invoke_txn.is_err());
@@ -467,7 +444,7 @@ fn test_try_invoke_txn_from_broadcasted_invoke_txn_v1_max_sig_size() {
 fn test_try_invoke_txn_from_broadcasted_invoke_txn_v1_max_calldata_size() {
     let calldata_size_maxed = vec![FieldElement::default(); MaxCalldataSize::get() as usize + 1];
 
-    let broadcasted_invoke_txn_v1 = BroadcastedInvokeTransactionV1 {
+    let broadcasted_invoke_txn = BroadcastedInvokeTransaction {
         max_fee: FieldElement::default(),
         nonce: FieldElement::default(),
         sender_address: FieldElement::default(),
@@ -476,7 +453,6 @@ fn test_try_invoke_txn_from_broadcasted_invoke_txn_v1_max_calldata_size() {
         is_query: false,
     };
 
-    let broadcasted_invoke_txn = BroadcastedInvokeTransaction::V1(broadcasted_invoke_txn_v1);
     let invoke_txn = InvokeTransaction::try_from(broadcasted_invoke_txn);
 
     assert!(invoke_txn.is_err());

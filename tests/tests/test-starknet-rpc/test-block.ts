@@ -122,7 +122,7 @@ describeDevMadara("Starknet RPC - Block Test", (context) => {
       const current_block = await providerRPC.getBlockHashAndNumber();
 
       // starknet starting block number should be 0 with this test setup
-      expect(status["starting_block_num"]).to.be.equal("0x0");
+      expect(status["starting_block_num"]).to.be.equal(0);
       // starknet current and highest block number should be equal to
       // the current block with this test setup
       expect(parseInt(status["current_block_num"])).to.be.equal(
@@ -153,9 +153,8 @@ describeDevMadara("Starknet RPC - Block Test", (context) => {
       });
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      const latestBlock: Block = await providerRPC.getBlockWithTxHashes(
-        "latest",
-      );
+      const latestBlock: Block =
+        await providerRPC.getBlockWithTxHashes("latest");
       expect(latestBlock).to.not.be.undefined;
       expect(latestBlock.status).to.be.equal("ACCEPTED_ON_L2");
       expect(latestBlock.transactions.length).to.be.equal(0);
@@ -173,9 +172,8 @@ describeDevMadara("Starknet RPC - Block Test", (context) => {
 
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      const blockWithTxHashes: Block = await providerRPC.getBlockWithTxHashes(
-        "latest",
-      );
+      const blockWithTxHashes: Block =
+        await providerRPC.getBlockWithTxHashes("latest");
       expect(blockWithTxHashes).to.not.be.undefined;
       expect(blockWithTxHashes.status).to.be.equal("ACCEPTED_ON_L2");
       expect(blockWithTxHashes.transactions.length).to.be.equal(1);

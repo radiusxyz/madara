@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use mc_data_availability::DaLayer;
 use sc_cli::RunCmd;
 
 /// Available Sealing methods.
@@ -15,7 +16,6 @@ pub enum Sealing {
 /// Available testnets.
 #[derive(Debug, Copy, Clone, PartialEq, clap::ValueEnum)]
 pub enum Testnet {
-    Local,
     Sharingan,
 }
 
@@ -42,21 +42,20 @@ pub struct ExtendedRunCmd {
     #[clap(long)]
     pub madara_path: Option<PathBuf>,
 
-    #[arg(long, value_enum, ignore_case = true)]
-    pub sealing: Option<Sealing>,
-
     #[clap(long)]
     pub encrypted_mempool: bool,
 
     #[clap(long)]
-    pub using_external_decryptor: bool,
-}
-
-#[derive(Debug)]
-pub struct ExtendedConfiguration {
-    pub sealing: Option<Sealing>,
-    pub encrypted_mempool: bool,
     pub using_external_decryptor: bool
+
+    #[clap(long)]
+    pub chain_spec_url: Option<String>,
+
+    #[clap(long)]
+    pub genesis_url: Option<String>,
+
+    #[clap(long)]
+    pub da_layer: Option<DaLayer>,
 }
 
 #[allow(clippy::large_enum_variant)]

@@ -1,6 +1,5 @@
 //! This is a gigantic copy pasta from <https://github.com/eqlabs/pathfinder/tree/main/crates/merkle-tree> Thanks to the equilibrium team and whoever else contributed for the code.
 use alloc::vec::Vec;
-use core::borrow::Borrow;
 use core::iter::once;
 use core::marker::PhantomData;
 
@@ -40,7 +39,7 @@ impl Decode for NodesMapping {
         // for Node so we can use it for Vec<(NodeId, Node)>.
         let val: Vec<(NodeId, Node)> =
             Decode::decode(input).map_err(|_| Error::from("Can't get NodesMapping from input buffer."))?;
-        Ok(NodesMapping(HashMap::from_iter(val.into_iter())))
+        Ok(NodesMapping(HashMap::from_iter(val)))
     }
 }
 
@@ -256,8 +255,8 @@ impl<H: HasherT> MerkleTree<H> {
         //
         // 2. The tree is empty, we insert the new leaf and the root becomes an edge node connecting to it.
         //
-        // 3. The leaf does not exist, and the tree is not empty. The final node in the traversal will
-        //    be an edge node who's path diverges from our new leaf node's.
+        // 3. The leaf does not exist, and the tree is not empty. The final node in the traversal will be an
+        //    edge node who's path diverges from our new leaf node's.
         //
         //    This edge must be split into a new subtree containing both the existing edge's child and the
         //    new leaf. This requires an edge followed by a binary node and then further edges to both the
@@ -585,7 +584,7 @@ impl<H: HasherT> MerkleTree<H> {
     ///
     /// * `parent` - The parent node to merge the child with.
     fn merge_edges(&self, parent: &mut EdgeNode) {
-        let resolved_child = match self.nodes.0.get(&parent.child).unwrap().borrow() {
+        let resolved_child = match self.nodes.0.get(&parent.child).unwrap() {
             Node::Unresolved(_hash) => panic!("Resolve is useless"),
             other => other.clone(),
         };
