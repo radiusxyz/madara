@@ -1,10 +1,9 @@
 use alloc::sync::Arc;
-use std::collections::HashMap;
 
 use frame_support::assert_ok;
 use mp_digest_log::{ensure_log, find_starknet_block};
-use mp_starknet::execution::types::Felt252Wrapper;
-use mp_starknet::sequencer_address::DEFAULT_SEQUENCER_ADDRESS;
+use mp_felt::Felt252Wrapper;
+use mp_sequencer_address::DEFAULT_SEQUENCER_ADDRESS;
 use starknet_api::api_core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use starknet_api::hash::StarkFelt;
@@ -110,7 +109,7 @@ fn get_block_context_works() {
             block_context.fee_token_address
         );
         // correct vm_resource_fee_cost
-        let vm_resoursce_fee_cost: Arc<HashMap<String, f64>> = Default::default();
+        let vm_resoursce_fee_cost: Arc<_> = Default::default();
         assert_eq!(vm_resoursce_fee_cost, block_context.vm_resource_fee_cost);
         // correct invoke_tx_max_n_steps: T::InvokeTxMaxNSteps::get(),
         assert_eq!(InvokeTxMaxNSteps::get(), block_context.invoke_tx_max_n_steps);

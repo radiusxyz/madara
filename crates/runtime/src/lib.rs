@@ -27,9 +27,9 @@ pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
 use frame_system::{EventRecord, Phase};
-use mp_starknet::execution::types::Felt252Wrapper;
-use mp_starknet::transaction::compute_hash::ComputeTransactionHash;
-use mp_starknet::transaction::{Transaction, TxType, UserTransaction};
+use mp_felt::Felt252Wrapper;
+use mp_transactions::compute_hash::ComputeTransactionHash;
+use mp_transactions::{Transaction, TxType, UserTransaction};
 use pallet_grandpa::{fg_primitives, AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList};
 /// Import the StarkNet pallet.
 pub use pallet_starknet;
@@ -358,6 +358,10 @@ impl_runtime_apis! {
 
         fn get_tx_execution_outcome(tx_hash: TransactionHash) -> Option<Vec<u8>> {
            Starknet::tx_revert_error(tx_hash).map(|s| s.into_bytes())
+        }
+
+        fn get_block_context() -> pallet_starknet::runtime_api::BlockContext {
+           Starknet::get_block_context().into()
         }
     }
 

@@ -26,6 +26,7 @@ tokio = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true, features = ["thread-pool"] }
 log = { workspace = true }
+md5 = { workspace = true }
 serde = { workspace = true }
 
 frame-system = { workspace = true }
@@ -79,21 +80,28 @@ frame-benchmarking-cli = { workspace = true }
 blockifier = { workspace = true }
 hex = { workspace = true }
 madara-runtime = { workspace = true }
+mc-commitment-state-diff = { workspace = true }
 mc-data-availability = { workspace = true }
 mc-db = { workspace = true }
 mc-mapping-sync = { workspace = true }
 mc-rpc = { workspace = true }
 mc-storage = { workspace = true }
 mc-transaction-pool = { workspace = true }
-mp-digest-log = { workspace = true }
-mp-starknet = { workspace = true }
 pallet-starknet = { workspace = true }
 starknet-core = { workspace = true }
+
+# Primitives
+mp-block = { workspace = true }
+mp-digest-log = { workspace = true }
+mp-felt = { workspace = true }
+mp-sequencer-address = { workspace = true, features = ["client"] }
 
 # CLI-specific dependencies
 try-runtime-cli = { optional = true, git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.43" }
 
+reqwest = { workspace = true }
 serde_json = { workspace = true }
+url = { workspace = true }
 
 [build-dependencies]
 substrate-build-script-utils = { workspace = true }
@@ -110,3 +118,6 @@ runtime-benchmarks = [
 # in the near future.
 try-runtime = ["madara-runtime/try-runtime", "try-runtime-cli/try-runtime"]
 disable-transaction-fee = ["madara-runtime/disable-transaction-fee"]
+# Load sharingan chain-specs during the compilation
+# This is the way to run a sharingan chain
+sharingan = []

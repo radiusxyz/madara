@@ -2,30 +2,106 @@
 
 ## Next release
 
-- fix: change dep of rustdoc on push
-- feat: modify the hash_bytes functions in `poseidon` and `pedersen` for dynamic
-  data length
+## v0.5.0
+
+- chore: release v0.5.0
+- test: add transaction pool logic unit tests
+- feat(client): spawn a task that listen to storage changes and build the
+  resulting commiment state diff for each block
+- dev(StarknetRPC): log error received from node before mapping to
+  InternalServerError
+- fix: change 'nonce too high' to log in debug instead of info
+- chore: update deps, vm ressource fee cost are now FixedU128, and stored in an
+  hashmap
+- ci: change jobs order in the workflow
+- ci: run integrations tests in the same runner as build
+- ci: replace ci cache with rust-cache
+- fix(transactions): remove `nonce` field from InvokeV0 tx
+- feat(transactions): don't enforce ordering in validate_unsigned for invokeV0
+- test(pallet): add function to get braavos hash
+- fix: event commitment documentation typo
+- ci: added testing key generation in the ci
+- fix(starknet-rpc-test): init one request client per runtime
+- test: validate Nonce for unsigned user txs
+- fix: fixed declare V0 placeholder with the hash of an empty list of felts
+- feat(cli): `run` is the by default command when running the `madara` bin
+- refacto(cli): `run` and `setup` commands are defined in their own files
+- refacto(cli): `run.testnet` argument removed in favor of the substrate native
+  `chain` arg
+- feat(cli): `run.fetch_chain_spec` argument removed in favor of the substrate
+  native `chain` arg
+- feat(cli): `setup` require a source file, either from an url or a path on the
+  local filesystem
+- chore(cli): use `Url`, `Path` and `PathBuf` types rather than `String`
+- refacto(cli): moved the pallet/chain_spec/utils methods to the node crate
+- feat(cli): `madara_path` arg has been remove, we use the substrate native
+  `base_path` arg instead
+- feat(cli): sharingan chain specs are loaded during the compilation, not
+  downloaded from github
+- refacto(pallet/starknet): `GenesisLoader` refactored as `GenesisData` + a
+  `base_path` field
+- feat(cli): for `run` param `--dev` now imply `--tmp`, as it is in substrate
+- test(starknet-rpc-test): run all tests against a single madara node
+- fix(service): confusing message when node starts (output the actual sealing
+  method being used)
+- refactor(sealing): how the sealing mode is passed into runtime
+- feat(sealing): finalization for instant sealing
+- test(starknet-js-test): run basic starknetjs compatibility tests again the
+  madara node
+- feat(cache-option): add an option to enable aggressive caching in command-line
+  parameters
+
+## v0.4.0
+
+- chore: release v0.4.0
+- feat: better management of custom configurations for genesis assets
+- feat: use actual vm resource costs
+- fix: add setup and run for rpc tests
+- fix: fix clap for run command
+- fix: add `madara_path` flag for setup command
+- fix: add official references to configs files
+- fix: cargo update and `main` branch prettier fix
+- fix: fix sharingan chain spec
+- fix: update madara infra to main branch
+- fix: update `Cargo.lock`
+- fix: rpc test failing
+- refactor: exported chain id constant in mp-chain-id crate and added one for
+  SN_MAIN
+- ci: disable pr close workflow
+- ci: add ci verification for detecting genesis changes and config hashes
+- test: add e2e test for `estimate_fee`
+
+## v0.3.0
+
+- chore: release v0.3.0
+- chore: big transaction type refactoring
+- chore: split `primitives` crates into multiple smaller crates
+- chore: improve logging about transaction when nonce is too high
 - chore: add real class hash values for genesis config
-- feat: unification of the DA interface
-- feat: use resolver 2 for cargo in the workspace
-- upgrade: restructure code for rust latest version
-- upgrade: bump rustc nightly version to 1.74 date
-- feat: bump starknet-core to 0.6.0 and remove InvokeV0
-- fix: estimate_fee should make sure all transaction have a version being
-  2^128 + 1 or 2^128+2 depending on the tx type
+- fix: use specific commit for avail and celestia
+- fix: change dep of rustdoc on push
 - fix: initial_gas set to max_fee and fixed fee not being charged when max_fee=0
 - fix: correct value of compiled_class_hash in RPCTransaction
-- ci: scope cache by branch and add cache cleanup
+- fix: std feature import in transactions crate
+- fix: replace all calls to `transmute` by calls `from_raw_parts`
+- fix: estimate_fee should make sure all transaction have a version being
+  2^128 + 1 or 2^128+2 depending on the tx type
+- feat: modify the hash_bytes functions in `poseidon` and `pedersen` for dynamic
+  data length
 - feat: print development accounts at node startup
-- test: add test to check tx signed by OZ account can be signed with Argent pk
+- feat: unification of the DA interface
+- feat: bump starknet-core to 0.6.0 and remove InvokeV0
+- feat: use resolver 2 for cargo in the workspace
+- feat: impl tx execution and verification as traits
+- perf: reduce the amount of data stored in the runtime and use the Substrate
+  block to as source of data in the client
+- perf: use perfect hash function in calculate_l1_gas_by_vm_usage
+- build: restructure code for rust latest version
+- build: bump rustc nightly version to 1.74 date
 - buid: add rust-analyzer to toolchain components
+- ci: scope cache by branch and add cache cleanup
 - ci: increase threshold for codecov to 1%
 - test: add `starknet-rpc-test` crate to the workspace
-- test(rpc): add `get_block_number.rs` tests
-- test(rpc): add `get_block_hash_and_number.rs` tests
-- test(rpc): add `get_block_transaction_count.rs` tests
-- test(rpc): add `chain_id.rs` tests
-- feat: print development accounts at node startup
 - test: add test to check tx signed by OZ account can be signed with Argent pk
 - buid: add rust-analyzer to toolchain components
 - ci: increase threshold for codecov to 1%
@@ -34,6 +110,14 @@
 - impl tx execution and verification as traits
 - reduce the amount of data stored in the runtime and use the Substrate block to
   as source of data in the client
+- perf: use perfect hash function in calculate_l1_gas_by_vm_usage
+- chore: add tests for tx hashing
+- split `primitives` crates into multiple smaller crates
+- fix: std feature import in transactions crate
+- chore: improve logging about transaction when nonce is too high
+- fix: rpc tests and background node run
+- test: add tests for simulate tx offset
+- test: add tests for tx hashing
 
 ## v0.2.0
 

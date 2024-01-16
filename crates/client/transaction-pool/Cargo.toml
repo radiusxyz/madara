@@ -35,8 +35,6 @@ sp-tracing = { workspace = true }
 sp-transaction-pool = { workspace = true }
 thiserror = { workspace = true }
 
-mp-starknet = { workspace = true }
-
 serde_json = { workspace = true, default-features = true }
 encryptor = { workspace = true }
 vdf = { workspace = true }
@@ -48,3 +46,10 @@ mc-config = { workspace = true }
 mc-sync-block = { workspace = true }
 bincode = { workspace = true }
 jsonrpsee = { version = "0.20", features = ["server", "http-client", "ws-client", "macros", "client-ws-transport-native-tls"] }
+
+[dev-dependencies]
+substrate-test-runtime = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.43" }
+substrate-test-runtime-client = { workspace = true }
+substrate-test-runtime-transaction-pool = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.43" }
+sc-block-builder = { workspace = true }
+sp-consensus = { workspace = true }

@@ -33,7 +33,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(clippy::large_enum_variant)]
 
-use mp_starknet::constants::INITIAL_GAS;
 /// Starknet pallet.
 /// Definition of the pallet's runtime storage items, events, errors, and dispatchable
 /// functions.
@@ -52,9 +51,6 @@ pub mod runtime_api;
 pub mod transaction_validation;
 /// The Starknet pallet's runtime custom types.
 pub mod types;
-/// Util functions for madara.
-#[cfg(feature = "std")]
-pub mod utils;
 
 /// Everything needed to run the pallet offchain workers
 mod offchain_worker;
@@ -83,16 +79,16 @@ use blockifier_state_adapter::BlockifierStateAdapter;
 use frame_support::pallet_prelude::*;
 use frame_support::traits::Time;
 use frame_system::pallet_prelude::*;
+use mp_block::{Block as StarknetBlock, Header as StarknetHeader};
 use mp_digest_log::MADARA_ENGINE_ID;
-use mp_starknet::block::{Block as StarknetBlock, Header as StarknetHeader};
-use mp_starknet::crypto::commitment;
-use mp_starknet::execution::types::Felt252Wrapper;
-use mp_starknet::sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRESS, INHERENT_IDENTIFIER};
-use mp_starknet::state::{FeeConfig, StateChanges};
-use mp_starknet::storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
-use mp_starknet::traits::hash::HasherT;
-use mp_starknet::transaction::execution::{Execute, Validate};
-use mp_starknet::transaction::{
+use mp_fee::INITIAL_GAS;
+use mp_felt::Felt252Wrapper;
+use mp_hashers::HasherT;
+use mp_sequencer_address::{InherentError, InherentType, DEFAULT_SEQUENCER_ADDRESS, INHERENT_IDENTIFIER};
+use mp_state::{FeeConfig, StateChanges};
+use mp_storage::{StarknetStorageSchemaVersion, PALLET_STARKNET_SCHEMA};
+use mp_transactions::execution::{Execute, Validate};
+use mp_transactions::{
     DeclareTransaction, DeployAccountTransaction, HandleL1MessageTransaction, InvokeTransaction, Transaction,
     UserAndL1HandlerTransaction, UserTransaction,
 };
@@ -675,7 +671,10 @@ pub mod pallet {
                     false,
                     T::DisableNonceValidation::get(),
                 )
-                .map_err(|_| Error::<T>::TransactionExecutionFailed)?;
+                .map_err(|e| {
+                    log::error!("Failed to consume l1 message: {}", e);
+                    Error::<T>::TransactionExecutionFailed
+                })?;
 
             let tx_hash = transaction.tx_hash;
             Self::emit_and_store_tx_and_fees_events(
@@ -747,12 +746,27 @@ pub mod pallet {
                     let sender_nonce: Felt252Wrapper = Pallet::<T>::nonce(sender_address).into();
                     let transaction_nonce = transaction.nonce();
 
-                    // Reject transaction with an already used Nonce
-                    if sender_nonce > *transaction_nonce {
-                        Err(InvalidTransaction::Stale)?;
-                    }
+                    // InvokeV0 does not have a nonce
+                    if let Some(transaction_nonce) = transaction_nonce {
+                        // Reject transaction with an already used Nonce
+                        if sender_nonce > *transaction_nonce {
+                            Err(InvalidTransaction::Stale)?;
+                        }
 
-                    (transaction.sender_address(), sender_nonce, *transaction_nonce)
+                        // A transaction with a nonce higher than the expected nonce is placed in
+                        // the future queue of the transaction pool.
+                        if sender_nonce < *transaction_nonce {
+                            log!(
+                                debug,
+                                "Nonce is too high. Expected: {:?}, got: {:?}. This transaction will be placed in the \
+                                 transaction pool and executed in the future when the nonce is reached.",
+                                sender_nonce,
+                                transaction_nonce
+                            );
+                        }
+                    };
+
+                    (transaction.sender_address(), sender_nonce, transaction_nonce.cloned())
                 } else {
                     // TODO: create and check L1 messages Nonce
                     unimplemented!()
@@ -775,23 +789,30 @@ pub mod pallet {
                         false,
                     ),
                 }
-                .map_err(|_| InvalidTransaction::BadProof)?;
+                .map_err(|e| {
+                    log::error!("failed to validate tx: {}", e);
+                    InvalidTransaction::BadProof
+                })?;
             }
 
-            let nonce_for_priority: u64 =
-                transaction_nonce.try_into().map_err(|_| InvalidTransaction::Custom(NONCE_DECODE_FAILURE))?;
+            let nonce_for_priority: u64 = transaction_nonce
+                .unwrap_or(Felt252Wrapper::ZERO)
+                .try_into()
+                .map_err(|_| InvalidTransaction::Custom(NONCE_DECODE_FAILURE))?;
 
             let mut valid_transaction_builder = ValidTransaction::with_tag_prefix("starknet")
                 .priority(u64::MAX - nonce_for_priority)
-                .and_provides((sender_address, transaction_nonce))
                 .longevity(T::TransactionLongevity::get())
                 .propagate(true);
 
-            // Enforce waiting for the tx with the previous nonce,
-            // to be either executed or ordered before in the block
-            if transaction_nonce > sender_nonce {
-                valid_transaction_builder = valid_transaction_builder
-                    .and_requires((sender_address, Felt252Wrapper(transaction_nonce.0 - FieldElement::ONE)));
+            if let Some(transaction_nonce) = transaction_nonce {
+                valid_transaction_builder = valid_transaction_builder.and_provides((sender_address, transaction_nonce));
+                // Enforce waiting for the tx with the previous nonce,
+                // to be either executed or ordered before in the block
+                if transaction_nonce > sender_nonce {
+                    valid_transaction_builder = valid_transaction_builder
+                        .and_requires((sender_address, Felt252Wrapper(transaction_nonce.0 - FieldElement::ONE)));
+                }
             }
 
             valid_transaction_builder.build()
@@ -843,7 +864,7 @@ impl<T: Config> Pallet<T> {
     /// Creates a [BlockContext] object. The [BlockContext] is needed by the blockifier to execute
     /// properly the transaction. Substrate caches data so it's fine to call multiple times this
     /// function, only the first transaction/block will be "slow" to load these data.
-    fn get_block_context() -> BlockContext {
+    pub fn get_block_context() -> BlockContext {
         let block_number = UniqueSaturatedInto::<u64>::unique_saturated_into(frame_system::Pallet::<T>::block_number());
         let block_timestamp = Self::block_timestamp();
 
@@ -865,7 +886,7 @@ impl<T: Config> Pallet<T> {
             invoke_tx_max_n_steps: T::InvokeTxMaxNSteps::get(),
             validate_max_n_steps: T::ValidateMaxNSteps::get(),
             gas_price,
-            max_recursion_depth: T::MaxRecursionDepth::get() as usize,
+            max_recursion_depth: T::MaxRecursionDepth::get(),
         }
     }
 
@@ -938,7 +959,7 @@ impl<T: Config> Pallet<T> {
         let max_n_steps = block_context.invoke_tx_max_n_steps;
         let mut resources = ExecutionResources::default();
         let mut entry_point_execution_context =
-            EntryPointExecutionContext::new(block_context, Default::default(), max_n_steps as usize);
+            EntryPointExecutionContext::new(block_context, Default::default(), max_n_steps);
 
         match entrypoint.execute(
             &mut BlockifierStateAdapter::<T>::default(),
@@ -989,7 +1010,7 @@ impl<T: Config> Pallet<T> {
 
         let chain_id = Self::chain_id();
         let (transaction_commitment, event_commitment) =
-            commitment::calculate_commitments::<T::SystemHash>(&transactions, &events, chain_id);
+            mp_commitments::calculate_commitments::<T::SystemHash>(&transactions, &events, chain_id);
         let protocol_version = T::ProtocolVersion::get();
         let extra_data = None;
 
