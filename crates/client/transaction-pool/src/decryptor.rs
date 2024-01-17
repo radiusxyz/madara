@@ -64,7 +64,7 @@ impl Decryptor {
             String::from_utf8(decrypted_invoke_tx).map_err(|e| Error::RuntimeApi(e.to_string()))?;
         let decrypted_invoke_tx = decrypted_invoke_tx.trim_end_matches('\0');
 
-        serde_json::from_str::<InvokeTransaction>(decrypted_invoke_tx).map_err(Error::Serialization)
+        serde_json::from_str(decrypted_invoke_tx).map_err(Error::Serialization)
     }
 
     /// Delegate to decrypt encrypted invoke transaction
@@ -110,6 +110,6 @@ impl Decryptor {
         let response: String =
             client.request("decrypt_transaction", params).await.map_err(|e| Error::RuntimeApi(e.to_string()))?;
 
-        serde_json::from_str::<InvokeTransaction>(response.as_str()).map_err(Error::Serialization)
+        serde_json::from_str(response.as_str()).map_err(Error::Serialization)
     }
 }
