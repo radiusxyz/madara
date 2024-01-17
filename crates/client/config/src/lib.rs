@@ -5,7 +5,7 @@ use std::sync::Once;
 pub use config::ConfigError;
 use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
-use toml;
+
 pub static mut CONFIG: MaybeUninit<Config> = MaybeUninit::uninit();
 static INIT: Once = Once::new();
 

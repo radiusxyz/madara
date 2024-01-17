@@ -1,7 +1,7 @@
 use mp_felt::Felt252Wrapper;
 use mp_transactions::EncryptedInvokeTransaction;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, skip_serializing_none};
+use serde_with::serde_as;
 use sp_core::ConstU32;
 use sp_runtime::BoundedVec;
 use starknet_core::serde::unsigned_field_element::UfeHex;

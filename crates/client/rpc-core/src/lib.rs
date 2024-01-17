@@ -27,7 +27,7 @@ pub mod types;
 
 use crate::types::{
     DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse,
-    ProvideDecryptionKeyResponse, RpcGetProofInput,
+    ProvideDecryptionKeyResponse,
 };
 
 #[serde_as]

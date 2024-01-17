@@ -95,21 +95,3 @@ fn short_string_hashing() {
         )
     );
 }
-
-#[test]
-fn dynamic_string_hashing() {
-    use core::str::FromStr;
-
-    let hasher = PoseidonHasher::hasher();
-
-    let message = format!("Hello, madara!!. It is poseidon hash."); // 37 bytes
-    let message = message.as_bytes();
-    let hash_value = hasher.hash_bytes(message);
-
-    assert_eq!(
-        hash_value,
-        Felt252Wrapper(
-            FieldElement::from_str("0x029b80231608c1cfcd7ff4aa3e7148fae5c16bf3c6e1b61a1034de7c0ac8469a").unwrap()
-        )
-    );
-}

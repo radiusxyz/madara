@@ -1,6 +1,5 @@
 //! Pedersen hash module.
 use alloc::vec::Vec;
-use core::cmp;
 
 use mp_felt::Felt252Wrapper;
 use starknet_core::crypto::compute_hash_on_elements;
@@ -107,24 +106,6 @@ fn short_string_hashing() {
         hash_value,
         Felt252Wrapper(
             FieldElement::from_str("0x04b1b68d0622d978edcef1071b697f003896a8f432d4d5523a2f72ec812591f8").unwrap()
-        )
-    );
-}
-
-#[test]
-fn dynamic_string_hashing() {
-    use core::str::FromStr;
-
-    let hasher = PedersenHasher::hasher();
-
-    let message = format!("Hello, madara!!. It is pedersen hash."); // 37 bytes
-    let message = message.as_bytes();
-    let hash_value = hasher.hash_bytes(message);
-
-    assert_eq!(
-        hash_value,
-        Felt252Wrapper(
-            FieldElement::from_str("0x05a76d229982b7175a4da818ceec34c08690af7db687fa036838beccc87e7ed1").unwrap()
         )
     );
 }

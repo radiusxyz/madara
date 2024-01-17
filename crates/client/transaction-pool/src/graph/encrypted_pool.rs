@@ -227,7 +227,7 @@ impl EncryptedPool {
     ///
     pub fn initialize_if_not_exist(&mut self, block_height: u64) -> &mut Txs {
         log::info!("insert new tx on {}, if not exist.", block_height);
-        self.txs.entry(block_height).or_insert_with(Txs::new)
+        self.txs.entry(block_height).or_default()
     }
 }
 

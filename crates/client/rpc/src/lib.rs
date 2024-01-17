@@ -19,7 +19,7 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_rpc_core::types::{
     DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse,
-    ProvideDecryptionKeyResponse, RpcGetProofInput,
+    ProvideDecryptionKeyResponse,
 };
 pub use mc_rpc_core::utils::*;
 use mc_rpc_core::Felt;
@@ -1088,8 +1088,6 @@ where
         invoke_transaction: BroadcastedInvokeTransaction,
         t: u64, // Time - The number of calculations for how much time should be taken in VDF
     ) -> RpcResult<EncryptedInvokeTransactionResponse> {
-        let encryptor = SequencerPoseidonEncryption::new();
-
         let base = 10; // Expression base (e.g. 10 == decimal / 16 == hex)
         let lambda = 2048; // N's bits (ex. RSA-2048 => lambda = 2048)
         let vdf: VDF = VDF::new(lambda, base);
@@ -1100,20 +1098,22 @@ where
         // 1. Use trapdoor
         let y = vdf.evaluate_with_trapdoor(params.t, params.g.clone(), params.n.clone(), params.remainder.clone());
 
-        let encryption_key = SequencerPoseidonEncryption::calculate_secret_key(y.as_bytes());
-
-        let invoke_tx = UserTransaction::try_from(invoke_transaction).unwrap();
+        let invoke_tx = UserTransaction::try_from(invoke_transaction).map_err(|e| {
+            error!("Failed to convert BroadcastedInvokeTransaction to UserTransaction: {e:?}");
+            StarknetRpcApiError::InternalServerError
+        })?;
 
         let chain_id = Felt252Wrapper(self.chain_id()?.0);
         let invoke_tx: String = match invoke_tx {
             UserTransaction::Invoke(invoke_tx) => serde_json::to_string(&invoke_tx)?,
             _ => {
-                log::error!("it's not invoke tx");
+                log::error!("Try to encrypt not invoke transaction");
                 return Err(StarknetRpcApiError::InternalServerError.into());
             }
         };
 
-        let (encrypted_data, nonce, _, _) = encryptor.encrypt(invoke_tx, encryption_key);
+        let encryption_key = SequencerPoseidonEncryption::calculate_secret_key(y.as_bytes());
+        let (encrypted_data, nonce, _, _) = SequencerPoseidonEncryption::new().encrypt(invoke_tx, encryption_key);
         Ok(EncryptedInvokeTransactionResponse {
             encrypted_invoke_transaction: EncryptedInvokeTransaction {
                 encrypted_data,
