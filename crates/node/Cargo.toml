@@ -30,8 +30,6 @@ md5 = { workspace = true }
 serde = { workspace = true }
 
 frame-system = { workspace = true }
-mc-sync-block = { workspace = true }
-mc-config = { workspace = true }
 sc-cli = { workspace = true }
 sc-client-api = { workspace = true }
 sc-basic-authorship = { workspace = true }
@@ -86,6 +84,8 @@ mc-db = { workspace = true }
 mc-mapping-sync = { workspace = true }
 mc-rpc = { workspace = true }
 mc-storage = { workspace = true }
+mc-sync-block = { workspace = true }
+mc-config = { workspace = true }
 mc-transaction-pool = { workspace = true }
 pallet-starknet = { workspace = true }
 starknet-core = { workspace = true }

@@ -44,8 +44,15 @@ starknet-crypto = { workspace = true, default-features = false, features = [
 tokio = { workspace = true }
 mc-config = { workspace = true }
 mc-sync-block = { workspace = true }
+mp-transactions = { workspace = true, features = ["serde"] }
 bincode = { workspace = true }
-jsonrpsee = { version = "0.20", features = ["server", "http-client", "ws-client", "macros", "client-ws-transport-native-tls"] }
+jsonrpsee = { version = "0.20", features = [
+	"server",
+	"http-client",
+	"ws-client",
+	"macros",
+	"client-ws-transport-native-tls",
+] }
 
 [dev-dependencies]
 substrate-test-runtime = { git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.43" }

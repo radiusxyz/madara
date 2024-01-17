@@ -9,12 +9,10 @@ mod tests;
 
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use mp_starknet::transaction::{EncryptedInvokeTransaction, InvokeTransaction};
+use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-// mod constants;
-// pub mod types;
 pub mod utils;
 
 use starknet_core::serde::unsigned_field_element::UfeHex;
@@ -29,7 +27,7 @@ pub mod types;
 
 use crate::types::{
     DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse,
-    ProvideDecryptionKeyResponse, RpcGetProofInput, RpcGetProofOutput,
+    ProvideDecryptionKeyResponse, RpcGetProofInput,
 };
 
 #[serde_as]

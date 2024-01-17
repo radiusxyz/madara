@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use madara_runtime::SealingMode;
+use mc_config::init_config;
 use mc_data_availability::DaLayer;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use sc_service::BasePath;
@@ -41,6 +42,15 @@ pub struct ExtendedRunCmd {
     #[clap(long, value_enum, ignore_case = true)]
     pub sealing: Option<Sealing>,
 
+    #[clap(long)]
+    pub encrypted_mempool: bool,
+
+    #[clap(long)]
+    pub using_external_decryptor: bool,
+
+    #[clap(long)]
+    pub madara_path: Option<String>,
+
     /// Choose a supported DA Layer
     #[clap(long)]
     pub da_layer: Option<DaLayer>,
@@ -54,6 +64,13 @@ pub struct ExtendedRunCmd {
     pub cache: bool,
 }
 
+#[derive(Debug)]
+pub struct ExtendedConfiguration {
+    pub sealing: Option<Sealing>,
+    pub encrypted_mempool: bool,
+    pub using_external_decryptor: bool,
+}
+
 impl ExtendedRunCmd {
     pub fn base_path(&self) -> Result<BasePath> {
         Ok(self
@@ -65,6 +82,15 @@ impl ExtendedRunCmd {
 }
 
 pub fn run_node(mut cli: Cli) -> Result<()> {
+    let madara_path = if let Some(madara_path) = cli.run.madara_path.clone() {
+        madara_path
+    } else {
+        let home_path = std::env::var("HOME").unwrap_or(std::env::var("USERPROFILE").unwrap_or(".".into()));
+        format!("{}/.madara", home_path)
+    };
+
+    init_config(&madara_path);
+
     if cli.run.base.shared_params.dev {
         override_dev_environment(&mut cli.run);
     }
@@ -87,9 +113,8 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
         }
     };
     runner.run_node_until_exit(|config| async move {
-        let sealing = cli.run.sealing.map(Into::into).unwrap_or_default();
         let cache = cli.run.cache;
-        service::new_full(config, sealing, da_config, cache).map_err(sc_cli::Error::Service)
+        service::new_full(config, da_config, cli, cache).map_err(sc_cli::Error::Service)
     })
 }
 

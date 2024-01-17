@@ -44,6 +44,8 @@ mc-transaction-pool = { workspace = true }
 starknet-core = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 thiserror = { workspace = true }
+mp-transactions = { workspace = true, features = ["serde"] }
+mp-felt = { workspace = true }
 
 [dev-dependencies]
 assert_matches = "1.5.0"

@@ -7,7 +7,7 @@ use jsonrpsee::core::client::ClientT;
 use jsonrpsee::core::params::ObjectParams;
 use jsonrpsee::ws_client::WsClientBuilder;
 use mc_config::config_map;
-use mp_starknet::transaction::{EncryptedInvokeTransaction, InvokeTransaction};
+use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction};
 use serde_json::json;
 use vdf::VDF;
 

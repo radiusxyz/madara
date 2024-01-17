@@ -1,6 +1,5 @@
 //! Poseidon hash module.
 use alloc::vec::Vec;
-use core::cmp;
 
 use mp_felt::Felt252Wrapper;
 use starknet_crypto::{poseidon_hash, poseidon_hash_many, FieldElement};

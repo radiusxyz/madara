@@ -18,8 +18,8 @@ use frame_support::bounded_vec;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_rpc_core::types::{
-    ContractData, DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse,
-    ProvideDecryptionKeyResponse, RpcGetProofInput, RpcGetProofOutput,
+    DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse,
+    ProvideDecryptionKeyResponse, RpcGetProofInput,
 };
 pub use mc_rpc_core::utils::*;
 use mc_rpc_core::Felt;
@@ -28,10 +28,11 @@ use mc_storage::OverrideHandle;
 use mc_transaction_pool::decryptor::Decryptor;
 use mc_transaction_pool::{ChainApi, EncryptedTransactionPool, Pool};
 use mp_felt::Felt252Wrapper;
+use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
-use mp_transactions::UserTransaction;
+use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction, UserTransaction};
 use pallet_starknet::runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
@@ -1153,7 +1154,7 @@ where
                 return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
             }
 
-            let txs = locked_epool.new_block(block_height);
+            let txs = locked_epool.initialize_if_not_exist(block_height);
             log::info!("{} : closed?", block_height);
 
             if txs.is_closed() {
@@ -1163,7 +1164,7 @@ where
                 log::info!("still open");
             }
 
-            txs.invoke_encrypted_tx(encrypted_invoke_transaction.clone());
+            txs.add_encrypted_tx(encrypted_invoke_transaction.clone());
 
             let txs_order = txs.get_order();
             log::info!("1. added length {} {}", txs.encrypted_txs_len(), txs_order);

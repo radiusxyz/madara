@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use mc_sync_block::SYNC_DB;
-use mp_starknet::transaction::{EncryptedInvokeTransaction, UserTransaction};
+use mp_transactions::{EncryptedInvokeTransaction, UserTransaction};
 
 use crate::error::{Error, Result};
 
@@ -48,7 +48,7 @@ impl Txs {
     }
 
     /// add encrypted tx on Txs
-    pub fn invoke_encrypted_tx(&mut self, encrypted_invoke_transaction: EncryptedInvokeTransaction) -> u64 {
+    pub fn add_encrypted_tx(&mut self, encrypted_invoke_transaction: EncryptedInvokeTransaction) -> u64 {
         self.encrypted_pool.insert(self.order, encrypted_invoke_transaction);
         self.received_keys.insert(self.order, false);
         self.increase_order();
@@ -62,8 +62,8 @@ impl Txs {
 
     /// increase not encrypted count
     pub fn increase_not_encrypted_cnt(&mut self) -> u64 {
-        self.increase_order();
         self.not_encrypted_cnt += 1;
+        self.increase_order();
         self.not_encrypted_cnt
     }
 
@@ -181,9 +181,9 @@ impl EncryptedPool {
     }
 
     /// add new Txs for block_height
-    pub fn new_block(&mut self, block_height: u64) -> &mut Txs {
-        log::info!("insert new tx on {}, if not exist.", block_height);
-        self.txs.entry(block_height).or_insert_with(Txs::new)
+    pub fn new_block(&mut self, block_height: u64) {
+        log::info!("insert new tx on {}.", block_height);
+        self.txs.insert(block_height, Txs::new());
     }
 
     /// txs exist
@@ -226,7 +226,8 @@ impl EncryptedPool {
 
     ///
     pub fn initialize_if_not_exist(&mut self, block_height: u64) -> &mut Txs {
-        self.new_block(block_height)
+        log::info!("insert new tx on {}, if not exist.", block_height);
+        self.txs.entry(block_height).or_insert_with(Txs::new)
     }
 }
 

@@ -56,13 +56,13 @@ impl SyncDB {
         let iter = self.db.iterator(IteratorMode::Start);
 
         // Iterate through all key-value pairs and print them.
-        for entry in iter {
+        for (i, entry) in iter.enumerate() {
             match entry {
                 Ok((key, value)) => {
                     log::info!("key: {:?} value: {:?}", key, value);
                 }
                 Err(err) => {
-                    log::error!("There is an error! {:?}", err);
+                    log::error!("There is no [{i}] key-value pair. - {err:?}")
                 }
             }
         }

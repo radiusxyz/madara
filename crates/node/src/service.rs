@@ -44,7 +44,8 @@ use sp_offchain::STORAGE_PREFIX;
 use sp_runtime::traits::BlakeTwo256;
 use sp_trie::PrefixedMemoryDB;
 
-use crate::cli::{Cli, Sealing};
+use crate::cli::Cli;
+use crate::commands::Sealing;
 use crate::genesis_block::MadaraGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
 use crate::starknet::{db_config_dir, MadaraBackend};
@@ -265,11 +266,14 @@ where
 /// - `cache`: whether more information should be cached when storing the block in the database.
 pub fn new_full(
     config: Configuration,
-    sealing: SealingMode,
     da_layer: Option<(DaLayer, PathBuf)>,
     cli: Cli,
     cache_more_things: bool,
 ) -> Result<TaskManager, ServiceError> {
+    let sealing: SealingMode = match cli.run.sealing {
+        Some(sealing) => sealing.into(),
+        None => SealingMode::Default,
+    };
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
 

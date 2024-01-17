@@ -394,7 +394,8 @@ where
     }
 
     fn ready_at(&self, at: NumberFor<Self::Block>) -> PolledIterator<PoolApi> {
-        let status = sc_transaction_pool_api::TransactionPool::status(self);
+        // let status = sc_transaction_pool_api::TransactionPool::status(self);
+        let status = self.status();
         // If there are no transactions in the pool, it is fine to return early.
         //
         // There could be transaction being added because of some re-org happening at the relevant
