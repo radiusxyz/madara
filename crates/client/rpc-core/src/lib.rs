@@ -34,9 +34,62 @@ use crate::types::{
 #[derive(Serialize, Deserialize)]
 pub struct Felt(#[serde_as(as = "UfeHex")] pub FieldElement);
 
+/// Starknet write rpc interface.
+#[rpc(server, namespace = "starknet")]
+pub trait StarknetWriteRpcApi {
+    /// Submit a new transaction to be added to the chain
+    #[method(name = "addInvokeTransaction")]
+    async fn add_invoke_transaction(
+        &self,
+        invoke_transaction: BroadcastedInvokeTransaction,
+    ) -> RpcResult<InvokeTransactionResult>;
+
+    /// Submit a new class declaration transaction
+    #[method(name = "addDeployAccountTransaction")]
+    async fn add_deploy_account_transaction(
+        &self,
+        deploy_account_transaction: BroadcastedDeployAccountTransaction,
+    ) -> RpcResult<DeployAccountTransactionResult>;
+
+    /// Submit a new deploy account transaction
+    #[method(name = "addDeclareTransaction")]
+    async fn add_declare_transaction(
+        &self,
+        declare_transaction: BroadcastedDeclareTransaction,
+    ) -> RpcResult<DeclareTransactionResult>;
+
+    // (For testing) Encrypt Invoke Transaction
+    #[method(name = "encryptInvokeTransaction")]
+    fn encrypt_invoke_transaction(
+        &self,
+        invoke_transaction: BroadcastedInvokeTransaction,
+        t: u64, //  Time - The number of calculations for how much time should be taken in VDF
+    ) -> RpcResult<EncryptedInvokeTransactionResponse>;
+
+    // (For testing) Decrypt Encrypted Invoke Transaction
+    #[method(name = "decryptEncryptedInvokeTransaction")]
+    async fn decrypt_encrypted_invoke_transaction(
+        &self,
+        encrypted_invoke_transaction: EncryptedInvokeTransaction,
+        decryption_key: Option<String>,
+    ) -> RpcResult<InvokeTransaction>;
+
+    /// Add an Encrypted Invoke Transaction to invoke a contract function
+    #[method(name = "addEncryptedInvokeTransaction")]
+    async fn add_encrypted_invoke_transaction(
+        &self,
+        encrypted_invoke_transaction: EncryptedInvokeTransaction,
+    ) -> RpcResult<EncryptedMempoolTransactionResponse>;
+
+    /// Allow a client to pass the decryption key, after the client received the order_commitment
+    /// from sequencer.
+    #[method(name = "provideDecryptionKey")]
+    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResponse>;
+}
+
 /// Starknet rpc interface.
 #[rpc(server, namespace = "starknet")]
-pub trait StarknetRpcApi {
+pub trait StarknetReadRpcApi {
     /// Get the most recent accepted block number
     #[method(name = "blockNumber")]
     fn block_number(&self) -> RpcResult<u64>;
@@ -90,20 +143,6 @@ pub trait StarknetRpcApi {
     #[method(name = "chainId")]
     fn chain_id(&self) -> RpcResult<Felt>;
 
-    /// Add an Invoke Transaction to invoke a contract function
-    #[method(name = "addInvokeTransaction")]
-    async fn add_invoke_transaction(
-        &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-    ) -> RpcResult<InvokeTransactionResult>;
-
-    /// Add a Deploy Account Transaction
-    #[method(name = "addDeployAccountTransaction")]
-    async fn add_deploy_account_transaction(
-        &self,
-        deploy_account_transaction: BroadcastedDeployAccountTransaction,
-    ) -> RpcResult<DeployAccountTransactionResult>;
-
     /// Estimate the fee associated with transaction
     #[method(name = "estimateFee")]
     async fn estimate_fee(
@@ -128,13 +167,6 @@ pub trait StarknetRpcApi {
     #[method(name = "getEvents")]
     async fn get_events(&self, filter: EventFilterWithPage) -> RpcResult<EventsPage>;
 
-    /// Submit a new transaction to be added to the chain
-    #[method(name = "addDeclareTransaction")]
-    async fn add_declare_transaction(
-        &self,
-        declare_transaction: BroadcastedDeclareTransaction,
-    ) -> RpcResult<DeclareTransactionResult>;
-
     /// Returns the information about a transaction by transaction hash.
     #[method(name = "getTransactionByHash")]
     fn get_transaction_by_hash(&self, transaction_hash: FieldElement) -> RpcResult<Transaction>;
@@ -145,32 +177,4 @@ pub trait StarknetRpcApi {
         &self,
         transaction_hash: FieldElement,
     ) -> RpcResult<MaybePendingTransactionReceipt>;
-
-    // (For testing) Encrypt Invoke Transaction
-    #[method(name = "encryptInvokeTransaction")]
-    fn encrypt_invoke_transaction(
-        &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-        t: u64, //  Time - The number of calculations for how much time should be taken in VDF
-    ) -> RpcResult<EncryptedInvokeTransactionResponse>;
-
-    // (For testing) Decrypt Encrypted Invoke Transaction
-    #[method(name = "decryptEncryptedInvokeTransaction")]
-    async fn decrypt_encrypted_invoke_transaction(
-        &self,
-        encrypted_invoke_transaction: EncryptedInvokeTransaction,
-        decryption_key: Option<String>,
-    ) -> RpcResult<InvokeTransaction>;
-
-    /// Add an Encrypted Invoke Transaction to invoke a contract function
-    #[method(name = "addEncryptedInvokeTransaction")]
-    async fn add_encrypted_invoke_transaction(
-        &self,
-        encrypted_invoke_transaction: EncryptedInvokeTransaction,
-    ) -> RpcResult<EncryptedMempoolTransactionResponse>;
-
-    /// Allow a client to pass the decryption key, after the client received the order_commitment
-    /// from sequencer.
-    #[method(name = "provideDecryptionKey")]
-    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResponse>;
 }
