@@ -15,11 +15,10 @@ use std::sync::Arc;
 
 use encryptor::SequencerPoseidonEncryption;
 use errors::StarknetRpcApiError;
-use frame_support::bounded_vec;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
 use mc_rpc_core::types::{
-    DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse,
+    DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse, MaxArraySize,
     ProvideDecryptionKeyResponse,
 };
 pub use mc_rpc_core::utils::*;
@@ -47,7 +46,7 @@ use sp_core::H256;
 use sp_runtime::generic::BlockId as SPBlockId;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use sp_runtime::transaction_validity::InvalidTransaction;
-use sp_runtime::DispatchError;
+use sp_runtime::{BoundedVec, DispatchError};
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BlockStatus, BlockTag, BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTransaction,
@@ -1246,11 +1245,13 @@ where
             StarknetRpcApiError::InternalServerError
         })?;
 
-        Ok(EncryptedMempoolTransactionResponse {
-            block_number: block_height,
-            order,
-            signature: bounded_vec!(signature.r.into(), signature.s.into(), signature.v.into()),
-        })
+        let vec = vec![signature.r.into(), signature.s.into(), signature.v.into()];
+        let signature = BoundedVec::<Felt252Wrapper, MaxArraySize>::try_from(vec).map_err(|e| {
+            error!("Failed to convert Vec to BoundedVec: {e:?}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        Ok(EncryptedMempoolTransactionResponse { block_number: block_height, order, signature })
     }
 
     async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResponse> {
@@ -1365,7 +1366,7 @@ where
     B: BlockT,
     <B as BlockT>::Extrinsic: Send + Sync + 'static,
 {
-    pool.submit_one(&SPBlockId::hash(best_block_hash), TX_SOURCE, extrinsic).await.map_err(|e| {
+    pool.submit_one(best_block_hash, TX_SOURCE, extrinsic).await.map_err(|e| {
         error!("Failed to submit extrinsic: {:?}", e);
         match e.into_pool_error() {
             Ok(PoolError::InvalidTransaction(InvalidTransaction::BadProof)) => StarknetRpcApiError::ValidationFailure,
