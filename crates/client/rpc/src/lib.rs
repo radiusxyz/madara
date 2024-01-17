@@ -38,6 +38,7 @@ use pallet_starknet::runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntime
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sc_network_sync::SyncingService;
+use sc_transaction_pool::{ChainApi as ScChainApi, Pool as ScPool};
 use sc_transaction_pool_api::error::{Error as PoolError, IntoPoolError};
 use sc_transaction_pool_api::{InPoolTransaction, TransactionPool, TransactionSource};
 use sp_api::{ApiError, ProvideRuntimeApi};

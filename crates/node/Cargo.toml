@@ -30,9 +30,9 @@ md5 = { workspace = true }
 serde = { workspace = true }
 
 frame-system = { workspace = true }
+sc-basic-authorship = { workspace = true }
 sc-cli = { workspace = true }
 sc-client-api = { workspace = true }
-sc-basic-authorship = { workspace = true }
 sc-consensus = { workspace = true }
 sc-consensus-aura = { workspace = true }
 sc-consensus-grandpa = { workspace = true }
@@ -44,6 +44,7 @@ sc-network-sync = { workspace = true }
 sc-offchain = { workspace = true }
 sc-service = { workspace = true }
 sc-telemetry = { workspace = true }
+sc-transaction-pool = { workspace = true }
 sc-transaction-pool-api = { workspace = true }
 sp-consensus-aura = { workspace = true }
 sp-consensus-grandpa = { workspace = true }
