@@ -2,9 +2,13 @@
 
 ## Next release
 
+- fix: add name, symbol and decimals to fee token storage
+- fix: dependencies for dockerfile and binaries
+- docs: add translation of madara beast article to spanish
 - chore: update starknet-js version in faucet-setup docs
 - dev(compilation): add incremental compilation
 - feat(rpc): add support for bulk estimate fee
+- feat: add argent multicall contract to genesis
 
 ## v0.5.0
 
