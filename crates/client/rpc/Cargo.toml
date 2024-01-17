@@ -19,6 +19,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 parking_lot = { workspace = true }
 # Madara runtime
 pallet-starknet = { workspace = true, default-features = true }
+pallet-starknet-runtime-api = { workspace = true, default-features = true }
 # Madara client
 mc-db = { workspace = true }
 mc-rpc-core = { workspace = true }
@@ -44,6 +45,7 @@ starknet-core = { workspace = true }
 starknet-ff = { workspace = true }
 starknet_api = { workspace = true, default-features = false }
 # Others
+anyhow = { workspace = true }
 hex = { workspace = true, default-features = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "server",

@@ -91,6 +91,7 @@ mc-sync-block = { workspace = true }
 mc-config = { workspace = true }
 mc-transaction-pool = { workspace = true }
 pallet-starknet = { workspace = true }
+pallet-starknet-runtime-api = { workspace = true }
 starknet-core = { workspace = true }
 
 # Primitives

@@ -16,6 +16,7 @@ use std::sync::Arc;
 use encryptor::SequencerPoseidonEncryption;
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::types::error::CallError;
 use log::error;
 use mc_db::Backend as MadaraBackend;
 use mc_rpc_core::types::{
@@ -23,18 +24,17 @@ use mc_rpc_core::types::{
     ProvideDecryptionKeyResponse,
 };
 pub use mc_rpc_core::utils::*;
-use mc_rpc_core::Felt;
-pub use mc_rpc_core::StarknetRpcApiServer;
+pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
 use mc_transaction_pool::decryptor::Decryptor;
 use mc_transaction_pool::{ChainApi, EncryptedTransactionPool, Pool};
-use mp_felt::Felt252Wrapper;
+use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction, UserTransaction};
-use pallet_starknet::runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
+use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sc_network_sync::SyncingService;
@@ -112,7 +112,7 @@ impl<A: ChainApi, B: BlockT, BE, C, P, H> Starknet<A, B, BE, C, P, H> {
 impl<A: ChainApi, B, BE, C, P, H> Starknet<A, B, BE, C, P, H>
 where
     B: BlockT,
-    C: HeaderBackend<B> + BlockBackend<B> + 'static,
+    C: HeaderBackend<B> + 'static,
 {
     pub fn current_block_number(&self) -> RpcResult<u64> {
         Ok(UniqueSaturatedInto::<u64>::unique_saturated_into(self.client.info().best_number))
@@ -122,10 +122,7 @@ where
 impl<A: ChainApi, B, BE, C, P, H> Starknet<A, B, BE, C, P, H>
 where
     B: BlockT,
-    C: HeaderBackend<B> + StorageProvider<B, BE> + 'static,
-    C: ProvideRuntimeApi<B>,
-    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-    BE: Backend<B>,
+    C: HeaderBackend<B> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     pub fn current_block_hash(&self) -> Result<H256, ApiError> {
@@ -193,7 +190,575 @@ const TX_SOURCE: TransactionSource = TransactionSource::External;
 
 #[async_trait]
 #[allow(unused_variables)]
-impl<A, B, BE, C, P, H> StarknetRpcApiServer for Starknet<A, B, BE, C, P, H>
+impl<A, B, BE, C, P, H> StarknetWriteRpcApiServer for Starknet<A, B, BE, C, P, H>
+where
+    A: ChainApi<Block = B> + 'static,
+    B: BlockT,
+    P: EncryptedTransactionPool<Block = B> + 'static,
+    BE: Backend<B> + 'static,
+    C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
+    C: ProvideRuntimeApi<B>,
+    C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
+    H: HasherT + Send + Sync + 'static,
+{
+    /// Submit a new declare transaction to be added to the chain
+    ///
+    /// # Arguments
+    ///
+    /// * `declare_transaction` - the declare transaction to be added to the chain
+    ///
+    /// # Returns
+    ///
+    /// * `declare_transaction_result` - the result of the declare transaction
+    async fn add_declare_transaction(
+        &self,
+        declare_transaction: BroadcastedDeclareTransaction,
+    ) -> RpcResult<DeclareTransactionResult> {
+        let best_block_hash = self.client.info().best_hash;
+
+        let transaction: UserTransaction = declare_transaction.try_into().map_err(|e| {
+            error!("Failed to convert BroadcastedDeclareTransaction to UserTransaction, error: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+        let class_hash = match transaction {
+            UserTransaction::Declare(ref tx, _) => tx.class_hash(),
+            _ => Err(StarknetRpcApiError::InternalServerError)?,
+        };
+
+        let current_block_hash = self.client.info().best_hash;
+        let contract_class = self
+            .overrides
+            .for_block_hash(self.client.as_ref(), current_block_hash)
+            .contract_class_by_class_hash(current_block_hash, (*class_hash).into());
+        if let Some(contract_class) = contract_class {
+            error!("Contract class already exists: {:?}", contract_class);
+            return Err(StarknetRpcApiError::ClassAlreadyDeclared.into());
+        }
+
+        let extrinsic = convert_transaction(self.client.clone(), best_block_hash, transaction.clone()).await?;
+
+        let block_height = self.current_block_number()?;
+        let mut order = None;
+        {
+            let epool = self.pool.encrypted_pool().clone();
+            let mut locked_epool = epool.lock().await;
+            if locked_epool.is_enabled() {
+                log::info!("Add declare encrypted transaction");
+                let txs = locked_epool.initialize_if_not_exist(block_height);
+                txs.increase_order();
+                txs.increase_not_encrypted_cnt();
+                order = Some(txs.get_order() - 1);
+            }
+        }
+
+        if let Some(order) = order {
+            log::info!("Submit extrinsic with order");
+            submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
+        } else {
+            log::info!("Submit extrinsic without order");
+            submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
+        }
+
+        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+
+        Ok(DeclareTransactionResult {
+            transaction_hash: transaction.compute_hash::<H>(chain_id, false).into(),
+            class_hash: class_hash.0,
+        })
+    }
+
+    /// Add an Invoke Transaction to invoke a contract function with order or without order
+    ///
+    /// # Arguments
+    ///
+    /// * `invoke tx` - <https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#invoke_transaction>
+    ///
+    /// # Returns
+    ///
+    /// * `transaction_hash` - transaction hash corresponding to the invocation
+    async fn add_invoke_transaction(
+        &self,
+        invoke_transaction: BroadcastedInvokeTransaction,
+    ) -> RpcResult<InvokeTransactionResult> {
+        let best_block_hash = self.client.info().best_hash;
+
+        let transaction: UserTransaction = invoke_transaction.try_into().map_err(|e| {
+            error!("Failed to convert BroadcastedInvokeTransaction to UserTransaction: {e}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        let extrinsic = convert_transaction(self.client.clone(), best_block_hash, transaction.clone()).await?;
+
+        let block_height = self.current_block_number()? + 1;
+
+        let mut order = None;
+        {
+            let epool = self.pool.encrypted_pool().clone();
+            let mut locked_epool = epool.lock().await;
+            if locked_epool.is_enabled() {
+                let txs = locked_epool.initialize_if_not_exist(block_height);
+                if txs.is_closed() {
+                    log::info!("{} is closed.. push on temporary pool on {}", block_height - 1, block_height);
+                    let next_txs = locked_epool.initialize_if_not_exist(block_height + 1);
+                    order = Some(next_txs.get_order());
+                    next_txs.add_tx_to_temporary_pool(next_txs.get_order(), transaction.clone());
+                } else {
+                    txs.increase_not_encrypted_cnt();
+                    order = Some(txs.get_order());
+                }
+            }
+        }
+        if let Some(order) = order {
+            submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
+        } else {
+            submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
+        }
+
+        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+
+        Ok(InvokeTransactionResult { transaction_hash: transaction.compute_hash::<H>(chain_id, false).into() })
+    }
+
+    /// Add an Deploy Account Transaction
+    ///
+    /// # Arguments
+    ///
+    /// * `deploy account transaction` - <https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#deploy_account_transaction>
+    ///
+    /// # Returns
+    ///
+    /// * `transaction_hash` - transaction hash corresponding to the invocation
+    /// * `contract_address` - address of the deployed contract account
+    async fn add_deploy_account_transaction(
+        &self,
+        deploy_account_transaction: BroadcastedDeployAccountTransaction,
+    ) -> RpcResult<DeployAccountTransactionResult> {
+        let best_block_hash = self.client.info().best_hash;
+
+        let transaction: UserTransaction = deploy_account_transaction.try_into().map_err(|e| {
+            error!("Failed to convert BroadcastedDeployAccountTransaction to UserTransaction, error: {e}",);
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        let extrinsic = convert_transaction(self.client.clone(), best_block_hash, transaction.clone()).await?;
+
+        let block_height = self.current_block_number()?;
+        let mut order = None;
+        {
+            let epool = self.pool.encrypted_pool().clone();
+            let mut locked_epool = epool.lock().await;
+            if locked_epool.is_enabled() {
+                log::info!("Deploy account encrypted transaction");
+                let txs = locked_epool.initialize_if_not_exist(block_height);
+                txs.increase_order();
+                txs.increase_not_encrypted_cnt();
+                order = Some(txs.get_order() - 1);
+            }
+        }
+
+        if let Some(order) = order {
+            log::info!("Submit extrinsic with order");
+            submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
+        } else {
+            log::info!("Submit extrinsic without order");
+            submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
+        }
+
+        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+        let account_address = match &transaction {
+            UserTransaction::DeployAccount(tx) => tx.account_address(),
+            _ => Err(StarknetRpcApiError::InternalServerError)?,
+        };
+
+        Ok(DeployAccountTransactionResult {
+            transaction_hash: transaction.compute_hash::<H>(chain_id, false).into(),
+            contract_address: account_address.into(),
+        })
+    }
+
+    // Todo(jaemin): To be removed. This is for testing.
+    fn encrypt_invoke_transaction(
+        &self,
+        invoke_transaction: BroadcastedInvokeTransaction,
+        t: u64, // Time - The number of calculations for how much time should be taken in VDF
+    ) -> RpcResult<EncryptedInvokeTransactionResponse> {
+        let base = 10; // Expression base (e.g. 10 == decimal / 16 == hex)
+        let lambda = 2048; // N's bits (ex. RSA-2048 => lambda = 2048)
+        let vdf: VDF = VDF::new(lambda, base);
+
+        let param = vdf.setup(t); // Generate parameters (it returns value as json string)
+        let params: ReturnData = serde_json::from_str(param.as_str())?; // Parsing parameters
+
+        // 1. Use trapdoor
+        let y = vdf.evaluate_with_trapdoor(params.t, params.g.clone(), params.n.clone(), params.remainder.clone());
+
+        let invoke_tx = UserTransaction::try_from(invoke_transaction).map_err(|e| {
+            error!("Failed to convert BroadcastedInvokeTransaction to UserTransaction: {e:?}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+        let invoke_tx_str: String = match invoke_tx {
+            UserTransaction::Invoke(invoke_tx) => serde_json::to_string(&invoke_tx)?,
+            _ => {
+                log::error!("Try to encrypt not invoke transaction");
+                return Err(StarknetRpcApiError::InternalServerError.into());
+            }
+        };
+
+        if !check_message_validity(invoke_tx_str.as_bytes()) {
+            log::error!("Invalid invoke transaction");
+            return Err(StarknetRpcApiError::InternalServerError.into());
+        }
+
+        let encryption_key = SequencerPoseidonEncryption::calculate_secret_key(y.as_bytes());
+        let (encrypted_data, nonce, _, _) = SequencerPoseidonEncryption::new().encrypt(invoke_tx_str, encryption_key);
+        Ok(EncryptedInvokeTransactionResponse {
+            encrypted_invoke_transaction: EncryptedInvokeTransaction {
+                encrypted_data,
+                nonce: format!("{nonce:x}"),
+                t,
+                g: params.g.clone(),
+                n: params.n.clone(),
+            },
+            decryption_key: y,
+        })
+    }
+
+    async fn decrypt_encrypted_invoke_transaction(
+        &self,
+        encrypted_invoke_transaction: EncryptedInvokeTransaction,
+        decryption_key: Option<String>,
+    ) -> RpcResult<InvokeTransaction> {
+        Decryptor::default()
+            .decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, decryption_key)
+            .await
+            .map_err(|e| {
+                error!("{e}");
+                StarknetRpcApiError::InternalServerError.into()
+            })
+    }
+
+    async fn add_encrypted_invoke_transaction(
+        &self,
+        encrypted_invoke_transaction: EncryptedInvokeTransaction,
+    ) -> RpcResult<EncryptedMempoolTransactionResponse> {
+        let mut block_height = self.current_block_number()? + 1;
+
+        let epool = self.pool.encrypted_pool();
+
+        let order = {
+            let mut locked_epool = epool.lock().await;
+            if !locked_epool.is_enabled() {
+                return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
+            }
+
+            let txs = locked_epool.initialize_if_not_exist(block_height);
+            log::info!("{} : closed?", block_height);
+
+            if txs.is_closed() {
+                block_height += 1;
+                log::info!("closed!, push at {}", block_height);
+            } else {
+                log::info!("still open");
+            }
+
+            txs.add_encrypted_tx(encrypted_invoke_transaction.clone());
+
+            let txs_order = txs.get_order();
+            log::info!("1. added length {} {}", txs.encrypted_txs_len(), txs_order);
+
+            let tx_cnt = locked_epool
+                .get_txs(block_height)
+                .map_err(|_| {
+                    error!("Failed to find get tx {}", block_height);
+                    StarknetRpcApiError::InternalServerError
+                })?
+                .encrypted_txs_len();
+            log::info!("2. added length {}", tx_cnt);
+
+            txs_order - 1
+        };
+
+        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+
+        let best_block_hash = self.client.info().best_hash;
+        let client = self.client.clone();
+        let pool = self.pool.clone();
+
+        // Generate commitment
+
+        // 1. Get sequencer private key
+        let config_map = config_map();
+        let sequencer_private_key = config_map.get_string("sequencer_private_key").map_err(|_| {
+            error!("sequencer_private_key must be set");
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        // 2. Make random FieldElement for making k to sign
+        let mut rng = OsRng;
+        let lower_bound = BigInt::from(0);
+        let upper_bound = BigInt::parse_bytes(FieldElement::MAX.to_string().as_bytes(), 10).ok_or_else(|| {
+            error!("Failed to parse BigInt {}", FieldElement::MAX);
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        let hex_k = rng.gen_bigint_range(&lower_bound, &upper_bound).to_str_radix(16);
+        let k = FieldElement::from_str(&format!("0x{}", hex_k)).map_err(|_| {
+            error!("Failed to convert BigInt to FieldElement: 0x{}", hex_k);
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        // 3. Make message
+        let encrypted_invoke_transaction_string = serde_json::to_string(&encrypted_invoke_transaction)?;
+        let encrypted_invoke_transaction_bytes = encrypted_invoke_transaction_string.as_bytes();
+        let encrypted_tx_info_hash = PedersenHasher::hash_bytes(encrypted_invoke_transaction_bytes);
+
+        let message = format!("{},{},{}", block_height, order, encrypted_tx_info_hash.0.to_string());
+        let message = message.as_bytes();
+        let commitment = PedersenHasher::hash_bytes(message);
+
+        // 4. Sign the commitment
+        let signature = sign(
+            &FieldElement::from_str(sequencer_private_key.as_str()).map_err(|_| {
+                error!("Failed to convert sequencer private key to FieldElement: {}", sequencer_private_key);
+                StarknetRpcApiError::InternalServerError
+            })?,
+            &FieldElement::from(commitment),
+            &k,
+        )
+        .map_err(|_| {
+            error!("Failed to sign the sequencer private key {} commitment", sequencer_private_key);
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        let vec = vec![signature.r.into(), signature.s.into(), signature.v.into()];
+        let signature = BoundedVec::<Felt252Wrapper, MaxArraySize>::try_from(vec).map_err(|e| {
+            error!("Failed to convert Vec to BoundedVec: {e:?}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        Ok(EncryptedMempoolTransactionResponse { block_number: block_height, order, signature })
+    }
+
+    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResponse> {
+        let config_map = config_map();
+        let sequencer_private_key_string = config_map.get_string("sequencer_private_key").map_err(|_| {
+            error!("sequencer private key must be set");
+            StarknetRpcApiError::InternalServerError
+        })?;
+        let sequencer_private_key = FieldElement::from_str(sequencer_private_key_string.as_str()).map_err(|_| {
+            error!("Failed to convert sequencer private key to FieldElement: {sequencer_private_key_string}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+
+        let sequencer_public_key = get_public_key(&sequencer_private_key);
+
+        let epool = self.pool.encrypted_pool().clone();
+        let block_height = decryption_info.block_number;
+
+        let encrypted_invoke_transaction = {
+            let mut locked_epool = epool.lock().await;
+            if !locked_epool.is_enabled() {
+                return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
+            }
+
+            let txs = locked_epool.initialize_if_not_exist(block_height);
+            let encrypted_invoke_transaction = txs
+                .get_invoked_encrypted_tx(decryption_info.order)
+                .map_err(|_| {
+                    error!(
+                        "Not exist encrypted invoke transaction (block number: {}, order: {})",
+                        decryption_info.block_number, decryption_info.order
+                    );
+                    StarknetRpcApiError::InternalServerError
+                })?
+                .clone();
+
+            txs.update_received_keys(decryption_info.order);
+
+            encrypted_invoke_transaction
+        };
+
+        let encrypted_invoke_transaction_string = serde_json::to_string(&encrypted_invoke_transaction)?;
+        let encrypted_invoke_transaction_bytes = encrypted_invoke_transaction_string.as_bytes();
+        let encrypted_tx_info_hash = PedersenHasher::hash_bytes(encrypted_invoke_transaction_bytes);
+
+        let message = format!(
+            "{},{},{}",
+            decryption_info.block_number,
+            decryption_info.order,
+            encrypted_tx_info_hash.0.to_string()
+        );
+        let message = message.as_bytes();
+        let commitment = PedersenHasher::hash_bytes(message);
+
+        verify(
+            &sequencer_public_key,
+            &FieldElement::from(commitment),
+            &FieldElement::from(decryption_info.signature[0]),
+            &FieldElement::from(decryption_info.signature[1]),
+        )
+        .map_err(|e| {
+            error!("Failed to verify the signature: {:?}", e);
+            StarknetRpcApiError::InternalServerError
+        })
+        .and_then(|verified| {
+            verified.then_some(()).ok_or_else(|| {
+                error!(
+                    "Invalid signature (block number: {}, order: {})",
+                    decryption_info.block_number, decryption_info.order
+                );
+                StarknetRpcApiError::InternalServerError
+            })
+        })?;
+
+        let best_block_hash = self.client.info().best_hash;
+        let invoke_tx = Decryptor::default()
+            .decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, Some(decryption_info.decryption_key))
+            .await
+            .map_err(|e| {
+                error!("Failed to decrypt encrypted invoke transaction: {e}");
+                StarknetRpcApiError::InternalServerError
+            })?;
+
+        {
+            let mut locked_epool = epool.lock().await;
+            locked_epool
+                .txs
+                .get_mut(&block_height)
+                .ok_or_else(|| {
+                    error!("Failed to get txs for block height: {block_height}");
+                    StarknetRpcApiError::InternalServerError
+                })?
+                .increase_decrypted_cnt();
+        }
+
+        let transaction: UserTransaction = UserTransaction::Invoke(invoke_tx.clone());
+        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+        let extrinsic = convert_transaction(self.client.clone(), best_block_hash, transaction.clone()).await?;
+        submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, decryption_info.order).await?;
+
+        Ok(ProvideDecryptionKeyResponse { transaction_hash: transaction.compute_hash::<H>(chain_id, false).into() })
+    }
+
+    // // todo(jaemin): remove this
+    // /// Submit a new declare transaction to be added to the chain
+    // ///
+    // /// # Arguments
+    // ///
+    // /// * `declare_transaction` - the declare transaction to be added to the chain
+    // ///
+    // /// # Returns
+    // ///
+    // /// * `declare_transaction_result` - the result of the declare transaction
+    // async fn add_declare_transaction(
+    //     &self,
+    //     declare_transaction: BroadcastedDeclareTransaction,
+    // ) -> RpcResult<DeclareTransactionResult> { let best_block_hash = self.client.info().best_hash;
+
+    //     let transaction: UserTransaction = declare_transaction.try_into().map_err(|e| {
+    //         error!("Failed to convert BroadcastedDeclareTransaction to UserTransaction, error: {e}");
+    //         StarknetRpcApiError::InternalServerError
+    //     })?;
+    //     let class_hash = match transaction {
+    //         UserTransaction::Declare(ref tx, _) => tx.class_hash(),
+    //         _ => Err(StarknetRpcApiError::InternalServerError)?,
+    //     };
+
+    //     let current_block_hash = self.client.info().best_hash;
+    //     let contract_class = self
+    //         .overrides
+    //         .for_block_hash(self.client.as_ref(), current_block_hash)
+    //         .contract_class_by_class_hash(current_block_hash, (*class_hash).into());
+
+    //     if let Some(contract_class) = contract_class {
+    //         error!("Contract class already exists: {:?}", contract_class);
+    //         return Err(StarknetRpcApiError::ClassAlreadyDeclared.into());
+    //     }
+
+    //     let extrinsic = convert_transaction(self.client.clone(), best_block_hash,
+    // transaction.clone()).await?;
+
+    //     submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
+
+    //     let chain_id = Felt252Wrapper(self.chain_id()?.0);
+
+    //     Ok(DeclareTransactionResult {
+    //         transaction_hash: transaction.compute_hash::<H>(chain_id, false).into(),
+    //         class_hash: class_hash.0,
+    //     })
+    // }
+
+    // /// Add an Invoke Transaction to invoke a contract function
+    // ///
+    // /// # Arguments
+    // ///
+    // /// * `invoke tx` - <https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#invoke_transaction>
+    // ///
+    // /// # Returns
+    // ///
+    // /// * `transaction_hash` - transaction hash corresponding to the invocation
+    // async fn add_invoke_transaction(
+    //     &self,
+    //     invoke_transaction: BroadcastedInvokeTransaction,
+    // ) -> RpcResult<InvokeTransactionResult> { let best_block_hash = self.client.info().best_hash;
+
+    //     let transaction: UserTransaction = invoke_transaction.try_into().map_err(|e| {
+    //         error!("Failed to convert BroadcastedInvokeTransaction to UserTransaction: {e}");
+    //         StarknetRpcApiError::InternalServerError
+    //     })?;
+
+    //     let extrinsic = convert_transaction(self.client.clone(), best_block_hash,
+    // transaction.clone()).await?;
+
+    //     submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
+
+    //     let chain_id = Felt252Wrapper(self.chain_id()?.0);
+
+    //     Ok(InvokeTransactionResult { transaction_hash: transaction.compute_hash::<H>(chain_id,
+    // false).into() }) }
+
+    // /// Add an Deploy Account Transaction
+    // ///
+    // /// # Arguments
+    // ///
+    // /// * `deploy account transaction` - <https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#deploy_account_transaction>
+    // ///
+    // /// # Returns
+    // ///
+    // /// * `transaction_hash` - transaction hash corresponding to the invocation
+    // /// * `contract_address` - address of the deployed contract account
+    // async fn add_deploy_account_transaction(
+    //     &self,
+    //     deploy_account_transaction: BroadcastedDeployAccountTransaction,
+    // ) -> RpcResult<DeployAccountTransactionResult> { let best_block_hash =
+    //   self.client.info().best_hash;
+
+    //     let transaction: UserTransaction = deploy_account_transaction.try_into().map_err(|e| {
+    //         error!("Failed to convert BroadcastedDeployAccountTransaction to UserTransaction, error:
+    // {e}",);         StarknetRpcApiError::InternalServerError
+    //     })?;
+
+    //     let extrinsic = convert_transaction(self.client.clone(), best_block_hash,
+    // transaction.clone()).await?;
+
+    //     submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
+
+    //     let chain_id = Felt252Wrapper(self.chain_id()?.0);
+    //     let account_address = match &transaction {
+    //         UserTransaction::DeployAccount(tx) => tx.account_address(),
+    //         _ => Err(StarknetRpcApiError::InternalServerError)?,
+    //     };
+
+    //     Ok(DeployAccountTransactionResult {
+    //         transaction_hash: transaction.compute_hash::<H>(chain_id, false).into(),
+    //         contract_address: account_address.into(),
+    //     })
+    // }
+}
+
+#[async_trait]
+#[allow(unused_variables)]
+impl<A, B, BE, C, P, H> StarknetReadRpcApiServer for Starknet<A, B, BE, C, P, H>
 where
     A: ChainApi<Block = B> + 'static,
     B: BlockT,
@@ -430,12 +995,17 @@ where
 
         let block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).unwrap_or_default();
         let chain_id = self.chain_id()?;
-        let blockhash = block.header().hash::<H>();
+        let block_hash = block.header().hash::<H>();
 
-        let transaction_hashes = if let Some(tx_hashes) = self.get_cached_transaction_hashes(blockhash.into()) {
+        let transaction_hashes = if let Some(tx_hashes) = self.get_cached_transaction_hashes(block_hash.into()) {
             let mut v = Vec::with_capacity(tx_hashes.len());
             for tx_hash in tx_hashes {
-                v.push(h256_to_felt(tx_hash)?);
+                v.push(h256_to_felt(tx_hash).map_err(|e| {
+                    CallError::Failed(anyhow::anyhow!(
+                        "The hash cached for block with hash {block_hash:?} is an invalid felt: '{tx_hash}'. The \
+                         caching db has probably been tempered"
+                    ))
+                })?);
             }
             v
         } else {
@@ -447,7 +1017,7 @@ where
             transactions: transaction_hashes,
             // TODO: Status hardcoded, get status from block
             status: BlockStatus::AcceptedOnL2,
-            block_hash: blockhash.into(),
+            block_hash: block_hash.into(),
             parent_hash: parent_blockhash.into(),
             block_number: block.header().block_number,
             new_root: block.header().global_state_root.into(),
@@ -488,181 +1058,6 @@ where
         })?;
 
         Ok(Felt(chain_id.0))
-    }
-
-    /// Submit a new declare transaction to be added to the chain
-    ///
-    /// # Arguments
-    ///
-    /// * `declare_transaction` - the declare transaction to be added to the chain
-    ///
-    /// # Returns
-    ///
-    /// * `declare_transaction_result` - the result of the declare transaction
-    async fn add_declare_transaction(
-        &self,
-        declare_transaction: BroadcastedDeclareTransaction,
-    ) -> RpcResult<DeclareTransactionResult> {
-        let best_block_hash = self.client.info().best_hash;
-
-        let transaction: UserTransaction = declare_transaction.try_into().map_err(|e| {
-            error!("Failed to convert BroadcastedDeclareTransaction to UserTransaction, error: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-        let class_hash = match transaction {
-            UserTransaction::Declare(ref tx, _) => tx.class_hash(),
-            _ => Err(StarknetRpcApiError::InternalServerError)?,
-        };
-
-        let current_block_hash = self.client.info().best_hash;
-        let contract_class = self
-            .overrides
-            .for_block_hash(self.client.as_ref(), current_block_hash)
-            .contract_class_by_class_hash(current_block_hash, (*class_hash).into());
-        if let Some(contract_class) = contract_class {
-            error!("Contract class already exists: {:?}", contract_class);
-            return Err(StarknetRpcApiError::ClassAlreadyDeclared.into());
-        }
-
-        let extrinsic = convert_transaction(self.client.clone(), best_block_hash, transaction.clone()).await?;
-
-        let block_height = self.current_block_number()?;
-        let mut order = None;
-        {
-            let epool = self.pool.encrypted_pool().clone();
-            let mut locked_epool = epool.lock().await;
-            if locked_epool.is_enabled() {
-                log::info!("Add declare encrypted transaction");
-                let txs = locked_epool.initialize_if_not_exist(block_height);
-                txs.increase_order();
-                txs.increase_not_encrypted_cnt();
-                order = Some(txs.get_order() - 1);
-            }
-        }
-
-        if let Some(order) = order {
-            log::info!("Submit extrinsic with order");
-            submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
-        } else {
-            log::info!("Submit extrinsic without order");
-            submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
-        }
-
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-
-        Ok(DeclareTransactionResult {
-            transaction_hash: transaction.compute_hash::<H>(chain_id, false).into(),
-            class_hash: class_hash.0,
-        })
-    }
-
-    /// Add an Invoke Transaction to invoke a contract function with order or without order
-    ///
-    /// # Arguments
-    ///
-    /// * `invoke tx` - <https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#invoke_transaction>
-    ///
-    /// # Returns
-    ///
-    /// * `transaction_hash` - transaction hash corresponding to the invocation
-    async fn add_invoke_transaction(
-        &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-    ) -> RpcResult<InvokeTransactionResult> {
-        let best_block_hash = self.client.info().best_hash;
-
-        let transaction: UserTransaction = invoke_transaction.try_into().map_err(|e| {
-            error!("Failed to convert BroadcastedInvokeTransaction to UserTransaction: {e}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-        let extrinsic = convert_transaction(self.client.clone(), best_block_hash, transaction.clone()).await?;
-
-        let block_height = self.current_block_number()? + 1;
-
-        let mut order = None;
-        {
-            let epool = self.pool.encrypted_pool().clone();
-            let mut locked_epool = epool.lock().await;
-            if locked_epool.is_enabled() {
-                let txs = locked_epool.initialize_if_not_exist(block_height);
-                if txs.is_closed() {
-                    log::info!("{} is closed.. push on temporary pool on {}", block_height - 1, block_height);
-                    let next_txs = locked_epool.initialize_if_not_exist(block_height + 1);
-                    order = Some(next_txs.get_order());
-                    next_txs.add_tx_to_temporary_pool(next_txs.get_order(), transaction.clone());
-                } else {
-                    txs.increase_not_encrypted_cnt();
-                    order = Some(txs.get_order());
-                }
-            }
-        }
-        if let Some(order) = order {
-            submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
-        } else {
-            submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
-        }
-
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-
-        Ok(InvokeTransactionResult { transaction_hash: transaction.compute_hash::<H>(chain_id, false).into() })
-    }
-
-    /// Add an Deploy Account Transaction
-    ///
-    /// # Arguments
-    ///
-    /// * `deploy account transaction` - <https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#deploy_account_transaction>
-    ///
-    /// # Returns
-    ///
-    /// * `transaction_hash` - transaction hash corresponding to the invocation
-    /// * `contract_address` - address of the deployed contract account
-    async fn add_deploy_account_transaction(
-        &self,
-        deploy_account_transaction: BroadcastedDeployAccountTransaction,
-    ) -> RpcResult<DeployAccountTransactionResult> {
-        let best_block_hash = self.client.info().best_hash;
-
-        let transaction: UserTransaction = deploy_account_transaction.try_into().map_err(|e| {
-            error!("Failed to convert BroadcastedDeployAccountTransaction to UserTransaction, error: {e}",);
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-        let extrinsic = convert_transaction(self.client.clone(), best_block_hash, transaction.clone()).await?;
-
-        let block_height = self.current_block_number()?;
-        let mut order = None;
-        {
-            let epool = self.pool.encrypted_pool().clone();
-            let mut locked_epool = epool.lock().await;
-            if locked_epool.is_enabled() {
-                log::info!("Deploy account encrypted transaction");
-                let txs = locked_epool.initialize_if_not_exist(block_height);
-                txs.increase_order();
-                txs.increase_not_encrypted_cnt();
-                order = Some(txs.get_order() - 1);
-            }
-        }
-
-        if let Some(order) = order {
-            log::info!("Submit extrinsic with order");
-            submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
-        } else {
-            log::info!("Submit extrinsic without order");
-            submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
-        }
-
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-        let account_address = match &transaction {
-            UserTransaction::DeployAccount(tx) => tx.account_address(),
-            _ => Err(StarknetRpcApiError::InternalServerError)?,
-        };
-
-        Ok(DeployAccountTransactionResult {
-            transaction_hash: transaction.compute_hash::<H>(chain_id, false).into(),
-            contract_address: account_address.into(),
-        })
     }
 
     /// Estimate the fee associated with transaction
@@ -741,10 +1136,26 @@ where
         let transaction = block.transactions().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
         let chain_id = self.chain_id()?;
 
-        let transaction_hash = self
-            .get_cached_transaction_hashes(block.header().hash::<H>().into())
-            .map(|tx_hashes| h256_to_felt(*tx_hashes.get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?))
-            .unwrap_or_else(|| Ok(transaction.compute_hash::<H>(chain_id.0.into(), false).0))?;
+        let opt_cached_transaction_hashes = self.get_cached_transaction_hashes(block.header().hash::<H>().into());
+
+        let transaction_hash = if let Some(cached_tx_hashes) = opt_cached_transaction_hashes {
+            cached_tx_hashes
+                .get(index as usize)
+                .map(|&h| h256_to_felt(h))
+                .ok_or(CallError::Failed(anyhow::anyhow!(
+                    "Number of cached tx hashes does not match the number of transactions in block with id {:?}",
+                    block_id
+                )))?
+                .map_err(|e| {
+                    CallError::Failed(anyhow::anyhow!(
+                        "The hash cached for tx at index {index} of block with id {:?} is an invalid felt. The \
+                         caching db has probably been tempered",
+                        block_id
+                    ))
+                })?
+        } else {
+            transaction.compute_hash::<H>(chain_id.0.into(), false).0
+        };
 
         Ok(to_starknet_core_tx(transaction.clone(), transaction_hash))
     }
@@ -752,34 +1163,44 @@ where
     /// Get block information with full transactions given the block id
     fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
-            error!("'{e}'");
+            error!("Block not found: '{e}'");
             StarknetRpcApiError::BlockNotFound
         })?;
 
         let block = get_block_by_block_hash(self.client.as_ref(), substrate_block_hash).unwrap_or_default();
+        let block_hash = block.header().hash::<H>();
 
         let chain_id = self.chain_id()?;
         let chain_id = Felt252Wrapper(chain_id.0);
 
-        let transaction_hashes = self.get_cached_transaction_hashes(block.header().hash::<H>().into());
+        let opt_cached_transaction_hashes = self.get_cached_transaction_hashes(block.header().hash::<H>().into());
         let mut transactions = Vec::with_capacity(block.transactions().len());
         for (index, tx) in block.transactions().iter().enumerate() {
-            let hash = transaction_hashes
-                .as_ref()
-                .map(|tx_hashes| {
-                    h256_to_felt(*tx_hashes.get(index).ok_or_else(|| {
-                        error!("Transaction hash not found at index: {index} in transaction hashes cache.");
-                        StarknetRpcApiError::InternalServerError
-                    })?)
-                })
-                .unwrap_or_else(|| Ok(tx.compute_hash::<H>(chain_id.0.into(), false).0))?;
-            transactions.push(to_starknet_core_tx(tx.clone(), hash));
+            let tx_hash = if let Some(cached_tx_hashes) = opt_cached_transaction_hashes.as_ref() {
+                cached_tx_hashes
+                    .get(index)
+                    .map(|&h| h256_to_felt(h))
+                    .ok_or(CallError::Failed(anyhow::anyhow!(
+                        "Number of cached tx hashes does not match the number of transactions in block with hash {:?}",
+                        block_hash
+                    )))?
+                    .map_err(|e| {
+                        CallError::Failed(anyhow::anyhow!(
+                            "The hash cached for tx at index {index} of block with hash {block_hash:?} is an invalid \
+                             felt. The caching db has probably been tempered"
+                        ))
+                    })?
+            } else {
+                tx.compute_hash::<H>(chain_id.0.into(), false).0
+            };
+
+            transactions.push(to_starknet_core_tx(tx.clone(), tx_hash));
         }
 
         let block_with_txs = BlockWithTxs {
             // TODO: Get status from block
             status: BlockStatus::AcceptedOnL2,
-            block_hash: block.header().hash::<H>().into(),
+            block_hash: block_hash.into(),
             parent_hash: block.header().parent_block_hash.into(),
             block_number: block.header().block_number,
             new_root: block.header().global_state_root.into(),
@@ -1160,270 +1581,6 @@ where
 
         Ok(MaybePendingTransactionReceipt::Receipt(receipt))
     }
-
-    // Todo(jaemin): To be removed. This is for testing.
-    fn encrypt_invoke_transaction(
-        &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-        t: u64, // Time - The number of calculations for how much time should be taken in VDF
-    ) -> RpcResult<EncryptedInvokeTransactionResponse> {
-        let base = 10; // Expression base (e.g. 10 == decimal / 16 == hex)
-        let lambda = 2048; // N's bits (ex. RSA-2048 => lambda = 2048)
-        let vdf: VDF = VDF::new(lambda, base);
-
-        let param = vdf.setup(t); // Generate parameters (it returns value as json string)
-        let params: ReturnData = serde_json::from_str(param.as_str())?; // Parsing parameters
-
-        // 1. Use trapdoor
-        let y = vdf.evaluate_with_trapdoor(params.t, params.g.clone(), params.n.clone(), params.remainder.clone());
-
-        let invoke_tx = UserTransaction::try_from(invoke_transaction).map_err(|e| {
-            error!("Failed to convert BroadcastedInvokeTransaction to UserTransaction: {e:?}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-        let invoke_tx_str: String = match invoke_tx {
-            UserTransaction::Invoke(invoke_tx) => serde_json::to_string(&invoke_tx)?,
-            _ => {
-                log::error!("Try to encrypt not invoke transaction");
-                return Err(StarknetRpcApiError::InternalServerError.into());
-            }
-        };
-
-        if !check_message_validity(invoke_tx_str.as_bytes()) {
-            log::error!("Invalid invoke transaction");
-            return Err(StarknetRpcApiError::InternalServerError.into());
-        }
-
-        let encryption_key = SequencerPoseidonEncryption::calculate_secret_key(y.as_bytes());
-        let (encrypted_data, nonce, _, _) = SequencerPoseidonEncryption::new().encrypt(invoke_tx_str, encryption_key);
-        Ok(EncryptedInvokeTransactionResponse {
-            encrypted_invoke_transaction: EncryptedInvokeTransaction {
-                encrypted_data,
-                nonce: format!("{nonce:x}"),
-                t,
-                g: params.g.clone(),
-                n: params.n.clone(),
-            },
-            decryption_key: y,
-        })
-    }
-
-    async fn decrypt_encrypted_invoke_transaction(
-        &self,
-        encrypted_invoke_transaction: EncryptedInvokeTransaction,
-        decryption_key: Option<String>,
-    ) -> RpcResult<InvokeTransaction> {
-        Decryptor::default()
-            .decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, decryption_key)
-            .await
-            .map_err(|e| {
-                error!("{e}");
-                StarknetRpcApiError::InternalServerError.into()
-            })
-    }
-
-    async fn add_encrypted_invoke_transaction(
-        &self,
-        encrypted_invoke_transaction: EncryptedInvokeTransaction,
-    ) -> RpcResult<EncryptedMempoolTransactionResponse> {
-        let mut block_height = self.current_block_number()? + 1;
-
-        let epool = self.pool.encrypted_pool();
-
-        let order = {
-            let mut locked_epool = epool.lock().await;
-            if !locked_epool.is_enabled() {
-                return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
-            }
-
-            let txs = locked_epool.initialize_if_not_exist(block_height);
-            log::info!("{} : closed?", block_height);
-
-            if txs.is_closed() {
-                block_height += 1;
-                log::info!("closed!, push at {}", block_height);
-            } else {
-                log::info!("still open");
-            }
-
-            txs.add_encrypted_tx(encrypted_invoke_transaction.clone());
-
-            let txs_order = txs.get_order();
-            log::info!("1. added length {} {}", txs.encrypted_txs_len(), txs_order);
-
-            let tx_cnt = locked_epool
-                .get_txs(block_height)
-                .map_err(|_| {
-                    error!("Failed to find get tx {}", block_height);
-                    StarknetRpcApiError::InternalServerError
-                })?
-                .encrypted_txs_len();
-            log::info!("2. added length {}", tx_cnt);
-
-            txs_order - 1
-        };
-
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-
-        let best_block_hash = self.client.info().best_hash;
-        let client = self.client.clone();
-        let pool = self.pool.clone();
-
-        // Generate commitment
-
-        // 1. Get sequencer private key
-        let config_map = config_map();
-        let sequencer_private_key = config_map.get_string("sequencer_private_key").map_err(|_| {
-            error!("sequencer_private_key must be set");
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-        // 2. Make random FieldElement for making k to sign
-        let mut rng = OsRng;
-        let lower_bound = BigInt::from(0);
-        let upper_bound = BigInt::parse_bytes(FieldElement::MAX.to_string().as_bytes(), 10).ok_or_else(|| {
-            error!("Failed to parse BigInt {}", FieldElement::MAX);
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-        let hex_k = rng.gen_bigint_range(&lower_bound, &upper_bound).to_str_radix(16);
-        let k = FieldElement::from_str(&format!("0x{}", hex_k)).map_err(|_| {
-            error!("Failed to convert BigInt to FieldElement: 0x{}", hex_k);
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-        // 3. Make message
-        let encrypted_invoke_transaction_string = serde_json::to_string(&encrypted_invoke_transaction)?;
-        let encrypted_invoke_transaction_bytes = encrypted_invoke_transaction_string.as_bytes();
-        let encrypted_tx_info_hash = PedersenHasher::hash_bytes(encrypted_invoke_transaction_bytes);
-
-        let message = format!("{},{},{}", block_height, order, encrypted_tx_info_hash.0.to_string());
-        let message = message.as_bytes();
-        let commitment = PedersenHasher::hash_bytes(message);
-
-        // 4. Sign the commitment
-        let signature = sign(
-            &FieldElement::from_str(sequencer_private_key.as_str()).map_err(|_| {
-                error!("Failed to convert sequencer private key to FieldElement: {}", sequencer_private_key);
-                StarknetRpcApiError::InternalServerError
-            })?,
-            &FieldElement::from(commitment),
-            &k,
-        )
-        .map_err(|_| {
-            error!("Failed to sign the sequencer private key {} commitment", sequencer_private_key);
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-        let vec = vec![signature.r.into(), signature.s.into(), signature.v.into()];
-        let signature = BoundedVec::<Felt252Wrapper, MaxArraySize>::try_from(vec).map_err(|e| {
-            error!("Failed to convert Vec to BoundedVec: {e:?}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-        Ok(EncryptedMempoolTransactionResponse { block_number: block_height, order, signature })
-    }
-
-    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResponse> {
-        let config_map = config_map();
-        let sequencer_private_key_string = config_map.get_string("sequencer_private_key").map_err(|_| {
-            error!("sequencer private key must be set");
-            StarknetRpcApiError::InternalServerError
-        })?;
-        let sequencer_private_key = FieldElement::from_str(sequencer_private_key_string.as_str()).map_err(|_| {
-            error!("Failed to convert sequencer private key to FieldElement: {sequencer_private_key_string}");
-            StarknetRpcApiError::InternalServerError
-        })?;
-
-        let sequencer_public_key = get_public_key(&sequencer_private_key);
-
-        let epool = self.pool.encrypted_pool().clone();
-        let block_height = decryption_info.block_number;
-
-        let encrypted_invoke_transaction = {
-            let mut locked_epool = epool.lock().await;
-            if !locked_epool.is_enabled() {
-                return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
-            }
-
-            let txs = locked_epool.initialize_if_not_exist(block_height);
-            let encrypted_invoke_transaction = txs
-                .get_invoked_encrypted_tx(decryption_info.order)
-                .map_err(|_| {
-                    error!(
-                        "Not exist encrypted invoke transaction (block number: {}, order: {})",
-                        decryption_info.block_number, decryption_info.order
-                    );
-                    StarknetRpcApiError::InternalServerError
-                })?
-                .clone();
-
-            txs.update_received_keys(decryption_info.order);
-
-            encrypted_invoke_transaction
-        };
-
-        let encrypted_invoke_transaction_string = serde_json::to_string(&encrypted_invoke_transaction)?;
-        let encrypted_invoke_transaction_bytes = encrypted_invoke_transaction_string.as_bytes();
-        let encrypted_tx_info_hash = PedersenHasher::hash_bytes(encrypted_invoke_transaction_bytes);
-
-        let message = format!(
-            "{},{},{}",
-            decryption_info.block_number,
-            decryption_info.order,
-            encrypted_tx_info_hash.0.to_string()
-        );
-        let message = message.as_bytes();
-        let commitment = PedersenHasher::hash_bytes(message);
-
-        verify(
-            &sequencer_public_key,
-            &FieldElement::from(commitment),
-            &FieldElement::from(decryption_info.signature[0]),
-            &FieldElement::from(decryption_info.signature[1]),
-        )
-        .map_err(|e| {
-            error!("Failed to verify the signature: {:?}", e);
-            StarknetRpcApiError::InternalServerError
-        })
-        .and_then(|verified| {
-            verified.then_some(()).ok_or_else(|| {
-                error!(
-                    "Invalid signature (block number: {}, order: {})",
-                    decryption_info.block_number, decryption_info.order
-                );
-                StarknetRpcApiError::InternalServerError
-            })
-        })?;
-
-        let best_block_hash = self.client.info().best_hash;
-        let invoke_tx = Decryptor::default()
-            .decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, Some(decryption_info.decryption_key))
-            .await
-            .map_err(|e| {
-                error!("Failed to decrypt encrypted invoke transaction: {e}");
-                StarknetRpcApiError::InternalServerError
-            })?;
-
-        {
-            let mut locked_epool = epool.lock().await;
-            locked_epool
-                .txs
-                .get_mut(&block_height)
-                .ok_or_else(|| {
-                    error!("Failed to get txs for block height: {block_height}");
-                    StarknetRpcApiError::InternalServerError
-                })?
-                .increase_decrypted_cnt();
-        }
-
-        let transaction: UserTransaction = UserTransaction::Invoke(invoke_tx.clone());
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-        let extrinsic = convert_transaction(self.client.clone(), best_block_hash, transaction.clone()).await?;
-        submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, decryption_info.order).await?;
-
-        Ok(ProvideDecryptionKeyResponse { transaction_hash: transaction.compute_hash::<H>(chain_id, false).into() })
-    }
 }
 
 async fn submit_extrinsic<P, B>(
@@ -1505,12 +1662,6 @@ where
     }
 }
 
-fn h256_to_felt(h256: H256) -> Result<FieldElement, StarknetRpcApiError> {
-    match Felt252Wrapper::try_from(h256) {
-        Ok(felt) => Ok(felt.0),
-        Err(e) => {
-            error!("failed to convert H256 to FieldElement: {e}");
-            Err(StarknetRpcApiError::InternalServerError)
-        }
-    }
+fn h256_to_felt(h256: H256) -> Result<FieldElement, Felt252WrapperError> {
+    Felt252Wrapper::try_from(h256).map(|f| f.0)
 }
