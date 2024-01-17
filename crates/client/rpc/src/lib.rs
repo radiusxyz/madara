@@ -7,6 +7,7 @@ mod errors;
 mod events;
 mod madara_backend_client;
 mod types;
+mod util;
 
 use core::str::FromStr;
 use std::marker::PhantomData;
@@ -58,6 +59,7 @@ use starknet_core::types::{
     SyncStatus, SyncStatusType, Transaction, TransactionFinalityStatus, TransactionReceipt,
 };
 use starknet_crypto::{get_public_key, sign, verify};
+use util::check_message_validity;
 use vdf::{ReturnData, VDF};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
@@ -1102,9 +1104,7 @@ where
             error!("Failed to convert BroadcastedInvokeTransaction to UserTransaction: {e:?}");
             StarknetRpcApiError::InternalServerError
         })?;
-
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
-        let invoke_tx: String = match invoke_tx {
+        let invoke_tx_str: String = match invoke_tx {
             UserTransaction::Invoke(invoke_tx) => serde_json::to_string(&invoke_tx)?,
             _ => {
                 log::error!("Try to encrypt not invoke transaction");
@@ -1112,8 +1112,13 @@ where
             }
         };
 
+        if !check_message_validity(invoke_tx_str.as_bytes()) {
+            log::error!("Invalid invoke transaction");
+            return Err(StarknetRpcApiError::InternalServerError.into());
+        }
+
         let encryption_key = SequencerPoseidonEncryption::calculate_secret_key(y.as_bytes());
-        let (encrypted_data, nonce, _, _) = SequencerPoseidonEncryption::new().encrypt(invoke_tx, encryption_key);
+        let (encrypted_data, nonce, _, _) = SequencerPoseidonEncryption::new().encrypt(invoke_tx_str, encryption_key);
         Ok(EncryptedInvokeTransactionResponse {
             encrypted_invoke_transaction: EncryptedInvokeTransaction {
                 encrypted_data,
