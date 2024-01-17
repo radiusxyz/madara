@@ -62,11 +62,11 @@ vdf = { workspace = true }
 starknet-crypto = { workspace = true, default-features = false, features = [
   "alloc",
 ] }
-tokio = { workspace = true }
 dotenv = { workspace = true }
 num-bigint = { workspace = true, default-features = false }
 rand = "0.8"
 mc-config = { workspace = true }
+tokio = { workspace = true, default-features = true, features = ["time"] }
 
 [dev-dependencies]
 rstest = { workspace = true }
