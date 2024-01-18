@@ -7,37 +7,7 @@ pub struct Cli {
 
     #[clap(flatten)]
     pub run: ExtendedRunCmd,
-    // /// Choose sealing method.
-    // #[arg(long, value_enum, ignore_case = true)]
-    // pub sealing: Option<Sealing>,
 }
-
-// #[derive(Debug, clap::Args)]
-// pub struct ExtendedRunCmd {
-//     #[clap(flatten)]
-//     pub run_cmd: RunCmd,
-
-//     #[clap(long)]
-//     pub testnet: Option<Testnet>,
-
-//     #[clap(long)]
-//     pub madara_path: Option<PathBuf>,
-
-//     #[clap(long)]
-//     pub encrypted_mempool: bool,
-
-//     #[clap(long)]
-//     pub using_external_decryptor: bool,
-
-//     #[clap(long)]
-//     pub chain_spec_url: Option<String>,
-
-//     #[clap(long)]
-//     pub genesis_url: Option<String>,
-
-//     #[clap(long)]
-//     pub da_layer: Option<DaLayer>,
-// }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, clap::Subcommand)]
