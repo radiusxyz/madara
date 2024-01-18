@@ -5,28 +5,27 @@
 use std::collections::HashMap;
 
 use mc_sync_block::SYNC_DB;
-use mp_transactions::{EncryptedInvokeTransaction, UserTransaction};
+use mp_transactions::EncryptedInvokeTransaction;
 
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Default)]
-/// Txs struct
-/// 1 Txs for 1 block
-/// * `encrypted_pool`: Map store encrypted tx
-/// * `key_received`: Map store specific order's key receivement.
-/// * `decrypted_cnt`: decrypted tx count
-/// * `order`: current order
 pub struct BlockTransactionPool {
     /// store encrypted tx
     encrypted_pool: HashMap<u64, EncryptedInvokeTransaction>,
-    /// store specific order's key receivement.
-    received_keys: HashMap<u64, bool>,
-    /// decrypted tx count
-    decrypted_cnt: u64,
+
+    /// store .
+    decryption_keys: HashMap<u64, bool>,
+
     /// current order
-    order: u64,
+    order: u64, // decrypted_tx_count + raw_tx_count
+
+    /// decrypted tx count
+    decrypted_tx_count: u64,
+
     /// not encrypted tx count
-    not_encrypted_cnt: u64,
+    raw_tx_count: u64,
+
     /// close flag
     closed: bool,
 }
@@ -36,32 +35,36 @@ impl BlockTransactionPool {
     pub fn new() -> Self {
         Self {
             encrypted_pool: HashMap::default(),
-            received_keys: HashMap::default(),
-            decrypted_cnt: 0,
+            decryption_keys: HashMap::default(),
+
             order: 0,
-            not_encrypted_cnt: 0,
+            decrypted_tx_count: 0,
+            raw_tx_count: 0,
+
             closed: false,
         }
     }
 
     /// add encrypted tx on Txs
-    pub fn add_encrypted_tx(&mut self, encrypted_invoke_transaction: EncryptedInvokeTransaction) -> u64 {
+    pub fn add_encrypted_invoke_tx(&mut self, encrypted_invoke_transaction: EncryptedInvokeTransaction) -> u64 {
+        let order = self.order;
+
         self.encrypted_pool.insert(self.order, encrypted_invoke_transaction);
-        self.received_keys.insert(self.order, false);
-        self.increase_order();
-        self.order - 1
+        self.order += 1;
+
+        order
     }
 
     /// get encrypted tx for order
-    pub fn get_invoked_encrypted_tx(&self, order: u64) -> Result<&EncryptedInvokeTransaction> {
+    pub fn get_encrypted_invoke_tx(&self, order: u64) -> Result<&EncryptedInvokeTransaction> {
         self.encrypted_pool.get(&order).ok_or(Error::Retrieval(format!("Failed to get tx - order: {}", order)))
     }
 
     /// increase not encrypted count
-    pub fn increase_not_encrypted_cnt(&mut self) -> u64 {
-        self.not_encrypted_cnt += 1;
-        self.increase_order();
-        self.not_encrypted_cnt
+    pub fn increase_raw_tx_count(&mut self) -> u64 {
+        self.raw_tx_count += 1;
+        self.order += 1;
+        self.raw_tx_count
     }
 
     /// encrypted txs len
@@ -79,13 +82,6 @@ impl BlockTransactionPool {
         self.closed = true;
     }
 
-    /// increase order
-    /// not only for set new encrypted tx
-    /// but also for declare tx, deploy account tx
-    pub fn increase_order(&mut self) {
-        self.order += 1;
-    }
-
     /// order getter
     pub fn get_order(&self) -> u64 {
         self.order
@@ -94,27 +90,27 @@ impl BlockTransactionPool {
     /// get encrypted tx count
     /// it's not order
     pub fn get_tx_cnt(&self) -> u64 {
-        self.encrypted_pool.len() as u64 + self.not_encrypted_cnt
+        self.encrypted_pool.len() as u64 + self.raw_tx_count
     }
 
     /// increase decrypted tx count
-    pub fn increase_decrypted_cnt(&mut self) {
-        self.decrypted_cnt += 1;
+    pub fn increase_decrypted_tx_count(&mut self) {
+        self.decrypted_tx_count += 1;
     }
 
     /// get decrypted tx count
-    pub fn get_decrypted_cnt(&self) -> u64 {
-        self.decrypted_cnt + self.not_encrypted_cnt
+    pub fn get_decrypted_tx_count(&self) -> u64 {
+        self.decrypted_tx_count + self.raw_tx_count
     }
 
     /// update key received information
-    pub fn update_received_keys(&mut self, order: u64) {
-        self.received_keys.insert(order, true);
+    pub fn update_decryption_keys(&mut self, order: u64) {
+        self.decryption_keys.insert(order, true);
     }
 
     /// get key received information
     pub fn is_key_received(&self, order: u64) -> bool {
-        self.received_keys.contains_key(&order)
+        self.decryption_keys.contains_key(&order)
     }
 }
 
@@ -127,7 +123,7 @@ impl BlockTransactionPool {
 ///   removed.
 pub struct EncryptedPool {
     /// Map of Txs, key:value = block_height:Txs
-    pub txs: HashMap<u64, BlockTransactionPool>,
+    block_transaction_pools: HashMap<u64, BlockTransactionPool>,
 
     /// encrypted_pool enabler. if whole part is splitted by package. it have to be removed.
     enabled: bool,
@@ -137,18 +133,8 @@ pub struct EncryptedPool {
 }
 
 impl EncryptedPool {
-    /// enable encrypted_pool
-    pub fn enable_encrypted_mempool(&mut self) {
-        self.enabled = true;
-    }
-
-    /// disable encrypted_pool
-    pub fn disable_encrypted_mempool(&mut self) {
-        self.enabled = false;
-    }
-
     /// check encrypted_pool is enabled
-    pub fn is_enabled(&self) -> bool {
+    pub fn is_using_encrypted_pool(&self) -> bool {
         self.enabled
     }
 
@@ -159,23 +145,28 @@ impl EncryptedPool {
 
     /// new encrypted_pool
     pub fn new(is_enabled_encrypted_mempool: bool, using_external_decryptor: bool) -> Self {
-        Self { txs: HashMap::default(), enabled: is_enabled_encrypted_mempool, using_external_decryptor }
+        Self {
+            block_transaction_pools: HashMap::default(),
+            enabled: is_enabled_encrypted_mempool,
+            using_external_decryptor,
+        }
     }
 
     /// add new Txs for block_height
     pub fn new_block(&mut self, block_height: u64) {
         log::info!("insert new tx on {}.", block_height);
-        self.txs.insert(block_height, BlockTransactionPool::new());
+
+        self.block_transaction_pools.insert(block_height, BlockTransactionPool::new());
     }
 
     /// txs exist
     pub fn exist(&self, block_height: u64) -> bool {
-        self.txs.contains_key(&block_height)
+        self.block_transaction_pools.contains_key(&block_height)
     }
 
     /// get txs
     pub fn get_txs(&self, block_height: u64) -> Result<&BlockTransactionPool> {
-        self.txs
+        self.block_transaction_pools
             .get(&block_height)
             .ok_or(Error::Retrieval(format!("Failed to get txs - block height: {}", block_height)))
     }
@@ -183,9 +174,10 @@ impl EncryptedPool {
     /// close
     pub fn close(&mut self, block_height: u64) -> Result<bool> {
         let txs = self
-            .txs
+            .block_transaction_pools
             .get_mut(&block_height)
             .ok_or(Error::Retrieval(format!("Failed to find block height: {}", block_height)))?;
+
         if !txs.encrypted_pool.is_empty() {
             let txs_string = serde_json::to_string(&txs.encrypted_pool.values().cloned().collect::<Vec<_>>())?;
             let db = SYNC_DB
@@ -209,6 +201,14 @@ impl EncryptedPool {
     ///
     pub fn get_or_init_block_tx_pool(&mut self, block_height: u64) -> &mut BlockTransactionPool {
         log::info!("insert new tx on {}, if not exist.", block_height);
-        self.txs.entry(block_height).or_default()
+        self.block_transaction_pools.entry(block_height).or_default()
+    }
+
+    pub fn get_block_tx_pool(&self, block_height: &u64) -> Option<&BlockTransactionPool> {
+        self.block_transaction_pools.get(block_height)
+    }
+
+    pub fn get_mut_block_tx_pool(&mut self, block_height: &u64) -> Option<&mut BlockTransactionPool> {
+        self.block_transaction_pools.get_mut(block_height)
     }
 }

@@ -37,7 +37,6 @@ pub use sc_executor::NativeElseWasmExecutor;
 use sc_service::error::Error as ServiceError;
 use sc_service::{new_db_backend, Configuration, TaskManager, WarpSyncParams};
 use sc_telemetry::{Telemetry, TelemetryHandle, TelemetryWorker};
-use sc_transaction_pool::FullPool as ScFullPool;
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use sp_api::offchain::OffchainStorage;
 use sp_api::ConstructRuntimeApi;
@@ -91,7 +90,6 @@ pub fn new_partial<BIQ>(
         FullBackend,
         FullSelectChain,
         sc_consensus::DefaultImportQueue<Block>,
-        // sc_transaction_pool::FullPool<Block, FullClient>,
         mc_transaction_pool::FullPool<Block, FullClient>,
         (
             BoxBlockImport,
@@ -159,15 +157,6 @@ where
 
     let select_chain = sc_consensus::LongestChain::new(backend.clone());
 
-    // let transaction_pool = sc_transaction_pool::BasicPool::new_full(
-    //     config.transaction_pool.clone(),
-    //     config.role.is_authority().into(),
-    //     config.prometheus_registry(),
-    //     task_manager.spawn_essential_handle(),
-    //     client.clone(),
-    //     cli.run.encrypted_mempool,
-    //     cli.run.using_external_decryptor,
-    // );
     let transaction_pool = mc_transaction_pool::BasicPool::new_full(
         mc_transaction_pool::Options::from(config.transaction_pool.clone()),
         config.role.is_authority().into(),
@@ -284,10 +273,8 @@ pub fn new_full(
     cli: Cli,
     cache_more_things: bool,
 ) -> Result<TaskManager, ServiceError> {
-    let sealing: SealingMode = match cli.run.sealing {
-        Some(sealing) => sealing.into(),
-        None => SealingMode::Default,
-    };
+    let sealing: SealingMode = cli.run.sealing.map(Into::into).unwrap_or_default();
+
     let build_import_queue =
         if sealing.is_default() { build_aura_grandpa_import_queue } else { build_manual_seal_import_queue };
 
@@ -302,6 +289,7 @@ pub fn new_full(
         other: (block_import, grandpa_link, mut telemetry, madara_backend),
     } = new_partial(&config, &cli, build_import_queue, cache_more_things)?;
     let config_map = config_map();
+
     if config_map.get_bool("is_validating").map_err(|e| ServiceError::Other(format!("Configuration error: {}", e)))? {
         task_manager.spawn_essential_handle().spawn("sync-DA", Some("sync-DA"), sync_with_da());
     }

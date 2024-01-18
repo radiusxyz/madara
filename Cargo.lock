@@ -6618,6 +6618,7 @@ dependencies = [
  "jsonrpsee 0.16.3",
  "log",
  "madara-runtime",
+ "mc-block-proposer",
  "mc-commitment-state-diff",
  "mc-config",
  "mc-data-availability",
@@ -6769,6 +6770,43 @@ name = "maybe-uninit"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
+
+[[package]]
+name = "mc-block-proposer"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.5",
+ "dotenv",
+ "futures",
+ "futures-timer",
+ "hyper",
+ "log",
+ "madara-runtime",
+ "mc-rpc",
+ "mc-transaction-pool",
+ "mp-felt",
+ "mp-transactions",
+ "pallet-starknet",
+ "pallet-starknet-runtime-api",
+ "parity-scale-codec",
+ "parking_lot 0.12.1",
+ "sc-block-builder",
+ "sc-client-api",
+ "sc-proposer-metrics",
+ "sc-telemetry",
+ "sc-transaction-pool",
+ "sc-transaction-pool-api",
+ "serde_json",
+ "sp-api",
+ "sp-blockchain",
+ "sp-consensus",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=release-polkadot-v1.3.0)",
+ "sp-inherents",
+ "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=release-polkadot-v1.3.0)",
+ "substrate-prometheus-endpoint",
+ "substrate-test-runtime-client",
+ "tokio",
+]
 
 [[package]]
 name = "mc-commitment-state-diff"

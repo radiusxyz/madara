@@ -32,7 +32,6 @@ jsonrpsee = { workspace = true, features = [
 ], default-features = true }
 mp-block = { workspace = true }
 mp-digest-log = { workspace = true }
-mp-felt = { workspace = true }
 mp-transactions = { workspace = true, features = ["serde"] }
 num-bigint = { workspace = true }
 serde = { workspace = true, default-features = true }
@@ -42,10 +41,11 @@ sp-api = { workspace = true, default-features = true }
 sp-blockchain = { workspace = true, default-features = true }
 sp-core = { workspace = true }
 sp-runtime = { workspace = true, default-features = true }
-mc-transaction-pool = { workspace = true }
 starknet-core = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 thiserror = { workspace = true }
+mp-felt = { workspace = true }
+mc-transaction-pool = { workspace = true }
 
 [dev-dependencies]
 assert_matches = "1.5.0"

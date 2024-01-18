@@ -251,12 +251,12 @@ where
             let encrypted_pool = self.pool.encrypted_pool().clone();
             let mut locked_encrypted_pool = encrypted_pool.lock().await;
 
-            if locked_encrypted_pool.is_enabled() {
+            if locked_encrypted_pool.is_using_encrypted_pool() {
                 let block_height = self.current_block_number()?;
                 let block_transaction_pool = locked_encrypted_pool.get_or_init_block_tx_pool(block_height);
 
                 let order = block_transaction_pool.get_order();
-                block_transaction_pool.increase_not_encrypted_cnt();
+                block_transaction_pool.increase_raw_tx_count();
 
                 log::info!("Submit extrinsic with order");
                 submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
@@ -300,7 +300,7 @@ where
             let encrypted_mempool = self.pool.encrypted_pool().clone();
             let mut locked_encrypted_mempool = encrypted_mempool.lock().await;
 
-            if locked_encrypted_mempool.is_enabled() {
+            if locked_encrypted_mempool.is_using_encrypted_pool() {
                 let block_height = self.current_block_number()?;
                 let order;
                 let block_transaction_pool = locked_encrypted_mempool.get_or_init_block_tx_pool(block_height);
@@ -320,11 +320,11 @@ where
                             locked_encrypted_mempool.get_or_init_block_tx_pool(next_block_height);
 
                         order = next_block_transaction_pool.get_order();
-                        next_block_transaction_pool.increase_not_encrypted_cnt();
+                        next_block_transaction_pool.increase_raw_tx_count();
                     }
                     false => {
                         order = block_transaction_pool.get_order();
-                        block_transaction_pool.increase_not_encrypted_cnt();
+                        block_transaction_pool.increase_raw_tx_count();
                     }
                 }
 
@@ -365,13 +365,13 @@ where
             let encrypted_pool = self.pool.encrypted_pool().clone();
             let mut locked_encrypted_pool = encrypted_pool.lock().await;
 
-            match locked_encrypted_pool.is_enabled() {
+            match locked_encrypted_pool.is_using_encrypted_pool() {
                 true => {
                     let block_height = self.current_block_number()?;
                     let block_transaction_pool = locked_encrypted_pool.get_or_init_block_tx_pool(block_height);
 
                     let order = block_transaction_pool.get_order();
-                    block_transaction_pool.increase_not_encrypted_cnt();
+                    block_transaction_pool.increase_raw_tx_count();
 
                     log::info!("Submit extrinsic with order");
                     submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
@@ -405,7 +405,7 @@ where
         let order = {
             let mut locked_encrypted_pool = encrypted_pool.lock().await;
 
-            if !locked_encrypted_pool.is_enabled() {
+            if !locked_encrypted_pool.is_using_encrypted_pool() {
                 return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
             }
 
@@ -417,7 +417,7 @@ where
             }
 
             let order = block_transaction_pool.get_order();
-            block_transaction_pool.add_encrypted_tx(encrypted_invoke_transaction.clone());
+            block_transaction_pool.add_encrypted_invoke_tx(encrypted_invoke_transaction.clone());
 
             order
         };
@@ -439,13 +439,13 @@ where
         let encrypted_invoke_transaction = {
             let mut locked_encrypted_pool = encrypted_pool.lock().await;
 
-            if !locked_encrypted_pool.is_enabled() {
+            if !locked_encrypted_pool.is_using_encrypted_pool() {
                 return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
             }
 
             let block_transaction_pool = locked_encrypted_pool.get_or_init_block_tx_pool(block_height);
             let encrypted_invoke_transaction = block_transaction_pool
-                .get_invoked_encrypted_tx(decryption_info.order)
+                .get_encrypted_invoke_tx(decryption_info.order)
                 .map_err(|_| {
                     error!(
                         "Not exist encrypted invoke transaction (block number: {}, order: {})",
@@ -455,7 +455,7 @@ where
                 })?
                 .clone();
 
-            block_transaction_pool.update_received_keys(decryption_info.order);
+            block_transaction_pool.update_decryption_keys(decryption_info.order);
 
             encrypted_invoke_transaction
         };
@@ -490,14 +490,13 @@ where
                 {
                     let mut locked_encrypted_pool = encrypted_pool.lock().await;
 
-                    locked_encrypted_pool
-                        .txs
-                        .get_mut(&block_height)
-                        .ok_or_else(|| {
+                    let block_tx_pool =
+                        locked_encrypted_pool.get_mut_block_tx_pool(&block_height).ok_or_else(|| {
                             error!("Failed to get txs for block height: {block_height}");
                             StarknetRpcApiError::InternalServerError
-                        })?
-                        .increase_decrypted_cnt();
+                        })?;
+
+                    block_tx_pool.increase_decrypted_tx_count();
                 }
 
                 let chain_id = Felt252Wrapper(self.chain_id()?.0);
