@@ -96,7 +96,7 @@ pub fn check_message_validity(message_bytes: &[u8]) -> bool {
     true
 }
 
-pub fn sign_message(message: String) -> Result<BoundedVec<Felt252Wrapper, MaxArraySize>, Err> {
+pub fn sign_message(message: String) -> Result<BoundedVec<Felt252Wrapper, MaxArraySize>, StarknetRpcApiError> {
     // Generate commitment
     // 1. Get sequencer private key
     let config_map = config_map();
