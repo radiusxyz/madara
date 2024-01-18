@@ -1,49 +1,18 @@
 use core::str::FromStr;
-use std::marker::PhantomData;
-use std::sync::Arc;
 
-use encryptor::SequencerPoseidonEncryption;
-use jsonrpsee::core::{async_trait, RpcResult};
-use jsonrpsee::types::error::CallError;
 use log::error;
 use mc_config::config_map;
-use mc_db::Backend as MadaraBackend;
-use mc_rpc_core::types::{
-    DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse, MaxArraySize,
-    ProvideDecryptionKeyResponse,
-};
+use mc_rpc_core::types::MaxArraySize;
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetWriteRpcApiServer};
-use mc_storage::OverrideHandle;
-use mc_transaction_pool::decryptor::Decryptor;
-use mc_transaction_pool::{ChainApi, EncryptedTransactionPool, Pool};
-use mp_felt::{Felt252Wrapper, Felt252WrapperError};
+use mp_felt::Felt252Wrapper;
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
-use mp_transactions::compute_hash::ComputeTransactionHash;
-use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
-use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction, TransactionStatus, UserTransaction};
 use num_bigint::{BigInt, RandBigInt};
-use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use rand::rngs::OsRng;
-use sc_client_api::backend::{Backend, StorageProvider};
-use sc_client_api::BlockBackend;
-use sc_network_sync::SyncingService;
-use sc_transaction_pool::{ChainApi as ScChainApi, Pool as ScPool};
-use sc_transaction_pool_api::error::{Error as PoolError, IntoPoolError};
-use sc_transaction_pool_api::{TransactionPool, TransactionSource};
-use sp_api::{ApiError, ProvideRuntimeApi};
-use sp_arithmetic::traits::UniqueSaturatedInto;
-use sp_blockchain::HeaderBackend;
-use sp_core::H256;
-use sp_runtime::generic::BlockId as SPBlockId;
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
-use sp_runtime::transaction_validity::InvalidTransaction;
-use sp_runtime::{BoundedVec, DispatchError};
-use starknet_api::transaction::Calldata;
+use sp_runtime::BoundedVec;
 use starknet_core::types::FieldElement;
 use starknet_crypto::{get_public_key, sign, verify};
-use vdf::{ReturnData, VDF};
 
 use crate::constants::{sbb, MODULUS};
 use crate::StarknetRpcApiError;
@@ -149,8 +118,9 @@ pub fn verify_sign(message: String, r: FieldElement, s: FieldElement) -> bool {
     let config_map = config_map();
     let sequencer_private_key_string =
         config_map.get_string("sequencer_private_key").expect("sequencer private key must be set");
-    let sequencer_private_key = FieldElement::from_str(sequencer_private_key_string.as_str())
-        .expect("Failed to convert sequencer private key to FieldElement: {sequencer_private_key_string}");
+    let sequencer_private_key = FieldElement::from_str(sequencer_private_key_string.as_str()).unwrap_or_else(|_| {
+        panic!("Failed to convert sequencer private key to FieldElement: {sequencer_private_key_string}")
+    });
 
     let sequencer_public_key = get_public_key(&sequencer_private_key);
 

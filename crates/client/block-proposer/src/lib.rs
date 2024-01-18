@@ -63,7 +63,7 @@ pub const DEFAULT_BLOCK_SIZE_LIMIT: usize = 4 * 1024 * 1024 + 512;
 
 const DEFAULT_SOFT_DEADLINE_PERCENT: Percent = Percent::from_percent(50);
 
-const LOG_TARGET: &'static str = "basic-authorship";
+const LOG_TARGET: &str = "basic-authorship";
 
 /// [`Proposer`] factory.
 pub struct ProposerFactory<A, B, C, PR> {
@@ -716,7 +716,7 @@ mod tests {
     use sc_transaction_pool_api::{ChainEvent, MaintainedTransactionPool, TransactionSource};
     use sp_api::Core;
     use sp_blockchain::HeaderBackend;
-    use sp_consensus::{BlockOrigin, Environment, Proposer};
+    use sp_consensus::BlockOrigin;
     use sp_runtime::generic::BlockId;
     use sp_runtime::traits::NumberFor;
     use sp_runtime::Perbill;

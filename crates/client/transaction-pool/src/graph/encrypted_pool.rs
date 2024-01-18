@@ -9,6 +9,8 @@ use mp_transactions::EncryptedInvokeTransaction;
 
 use crate::error::{Error, Result};
 
+/// Store decryption keys and encrypted transactions
+/// to process transactions in order.
 #[derive(Debug, Clone, Default)]
 pub struct BlockTransactionPool {
     /// store encrypted tx
@@ -171,15 +173,26 @@ impl EncryptedPool {
             .ok_or(Error::Retrieval(format!("Failed to get txs - block height: {}", block_height)))
     }
 
-    /// close
+    /// Closes the block transaction pool for a given block height.
+    ///
+    /// This function performs the following steps:
+    /// 1. Retrieves the `BlockTransactionPool` for the given block height.
+    /// 2. If the `BlockTransactionPool` contains encrypted transactions, it serializes them into a
+    ///    JSON string.
+    /// 3. Retrieves the sync database instance.
+    /// 4. Writes the block height as the sync target to the database.
+    /// 5. Writes the serialized encrypted transactions to the database using the block height as
+    ///    the key.
+    /// 6. Closes the `BlockTransactionPool`.
     pub fn close(&mut self, block_height: u64) -> Result<bool> {
-        let txs = self
+        let block_transaction_pool = self
             .block_transaction_pools
             .get_mut(&block_height)
             .ok_or(Error::Retrieval(format!("Failed to find block height: {}", block_height)))?;
 
-        if !txs.encrypted_pool.is_empty() {
-            let txs_string = serde_json::to_string(&txs.encrypted_pool.values().cloned().collect::<Vec<_>>())?;
+        if !block_transaction_pool.encrypted_pool.is_empty() {
+            let txs_string =
+                serde_json::to_string(&block_transaction_pool.encrypted_pool.values().cloned().collect::<Vec<_>>())?;
             let db = SYNC_DB
                 .get()
                 .ok_or(Error::SyncBlock("Failed to get sync db".to_string()))?
@@ -193,21 +206,23 @@ impl EncryptedPool {
             })?;
         }
 
-        txs.close();
+        block_transaction_pool.close();
 
         Ok(true)
     }
 
-    ///
+    /// Get or init block transaction pool(if not exist)
     pub fn get_or_init_block_tx_pool(&mut self, block_height: u64) -> &mut BlockTransactionPool {
         log::info!("insert new tx on {}, if not exist.", block_height);
         self.block_transaction_pools.entry(block_height).or_default()
     }
 
+    /// Get block transaction pool
     pub fn get_block_tx_pool(&self, block_height: &u64) -> Option<&BlockTransactionPool> {
         self.block_transaction_pools.get(block_height)
     }
 
+    /// Get mut block transaction pool
     pub fn get_mut_block_tx_pool(&mut self, block_height: &u64) -> Option<&mut BlockTransactionPool> {
         self.block_transaction_pools.get_mut(block_height)
     }

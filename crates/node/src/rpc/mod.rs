@@ -16,8 +16,6 @@ use mc_transaction_pool::{ChainApi, EncryptedTransactionPool, Pool};
 use sc_client_api::{Backend, BlockBackend, StorageProvider};
 use sc_consensus_manual_seal::rpc::EngineCommand;
 pub use sc_rpc_api::DenyUnsafe;
-use sc_transaction_pool::{ChainApi as ScChainApi, Pool as ScPool};
-use sc_transaction_pool_api::TransactionPool;
 use sp_api::ProvideRuntimeApi;
 use sp_block_builder::BlockBuilder;
 use sp_blockchain::{Error as BlockChainError, HeaderBackend, HeaderMetadata};

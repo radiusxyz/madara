@@ -9,7 +9,6 @@ mod madara_backend_client;
 mod types;
 mod utils;
 
-use core::str::FromStr;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -18,10 +17,9 @@ use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
-use mc_config::config_map;
 use mc_db::Backend as MadaraBackend;
 use mc_rpc_core::types::{
-    DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse, MaxArraySize,
+    DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse,
     ProvideDecryptionKeyResponse,
 };
 pub use mc_rpc_core::utils::*;
@@ -35,13 +33,10 @@ use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
 use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction, TransactionStatus, UserTransaction};
-use num_bigint::{BigInt, RandBigInt};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
-use rand::rngs::OsRng;
 use sc_client_api::backend::{Backend, StorageProvider};
 use sc_client_api::BlockBackend;
 use sc_network_sync::SyncingService;
-use sc_transaction_pool::{ChainApi as ScChainApi, Pool as ScPool};
 use sc_transaction_pool_api::error::{Error as PoolError, IntoPoolError};
 use sc_transaction_pool_api::{TransactionPool, TransactionSource};
 use sp_api::{ApiError, ProvideRuntimeApi};
@@ -51,7 +46,7 @@ use sp_core::H256;
 use sp_runtime::generic::BlockId as SPBlockId;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use sp_runtime::transaction_validity::InvalidTransaction;
-use sp_runtime::{BoundedVec, DispatchError};
+use sp_runtime::DispatchError;
 use starknet_api::transaction::Calldata;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BlockStatus, BlockTag, BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTransaction,
