@@ -42,7 +42,8 @@ use futures::future::{self, ready};
 use futures::prelude::*;
 pub use graph::base_pool::Limit as PoolLimit;
 pub use graph::{
-    ChainApi, EncryptedPool, ExtrinsicHash, IsValidator, Options, Pool, Transaction, Txs, ValidatedTransaction,
+    BlockTransactionPool, ChainApi, EncryptedPool, ExtrinsicHash, IsValidator, Options, Pool, Transaction,
+    ValidatedTransaction,
 };
 use parking_lot::Mutex;
 use prometheus_endpoint::Registry as PrometheusRegistry;
