@@ -45,6 +45,8 @@ pub enum StarknetRpcApiError {
     EncryptedMempoolEnabled = 600,
     #[error("Encrypted Mempool disabled")]
     EncryptedMempoolDisabled = 601,
+    #[error("Invalid signature")]
+    InvalidSignature = 602,
     #[error("Too many storage keys requested")]
     ProofLimitExceeded = 10000,
 }
