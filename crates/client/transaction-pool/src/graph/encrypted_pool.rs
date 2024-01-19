@@ -4,8 +4,8 @@
 
 use std::collections::HashMap;
 
-use mc_sync_block::SYNC_DB;
-use mp_transactions::{EncryptedInvokeTransaction, UserTransaction};
+use mc_sync_block::get_sync_db;
+use mp_transactions::EncryptedInvokeTransaction;
 
 use crate::error::{Error, Result};
 
@@ -15,8 +15,6 @@ use crate::error::{Error, Result};
 pub struct BlockTransactionPool {
     /// store encrypted tx
     encrypted_pool: HashMap<u64, EncryptedInvokeTransaction>,
-
-    temporary_pool: Vec<(u64, UserTransaction)>,
 
     /// store .
     decryption_keys: HashMap<u64, bool>,
@@ -39,7 +37,6 @@ impl BlockTransactionPool {
     pub fn new() -> Self {
         Self {
             encrypted_pool: HashMap::default(),
-            temporary_pool: Vec::default(),
             decryption_keys: HashMap::default(),
             order: 0,
             decrypted_tx_count: 0,
@@ -89,23 +86,6 @@ impl BlockTransactionPool {
     /// order getter
     pub fn get_order(&self) -> u64 {
         self.order
-    }
-
-    /// add tx to temporary pool
-    pub fn add_tx_to_temporary_pool(&mut self, order: u64, tx: UserTransaction) {
-        self.temporary_pool.push((order, tx));
-    }
-
-    /// get tx from temporary pool
-    pub fn get_tx_from_temporary_pool(&mut self, index: usize) -> Result<&(u64, UserTransaction)> {
-        self.temporary_pool
-            .get(index)
-            .ok_or(Error::Retrieval(format!("Failed to get tx from the temporary pool - index: {index}")))
-    }
-
-    /// get temporary pool
-    pub fn get_temporary_pool(&self) -> &[(u64, UserTransaction)] {
-        &self.temporary_pool
     }
 
     /// get encrypted tx count
@@ -212,11 +192,10 @@ impl EncryptedPool {
         if !block_transaction_pool.encrypted_pool.is_empty() {
             let txs_string =
                 serde_json::to_string(&block_transaction_pool.encrypted_pool.values().cloned().collect::<Vec<_>>())?;
-            let db = SYNC_DB
-                .get()
-                .ok_or(Error::SyncBlock("Failed to get sync db".to_string()))?
-                .as_ref()
-                .map_err(|e| Error::SyncBlock(format!("Failed to get sync db: {e:?}")))?;
+            let db = get_sync_db().map_err(|e| {
+                Error::SyncBlock(format!("Failed to get sync db - block height: {block_height}, error: {e:?}"))
+            })?;
+
             db.write("sync_target".to_string(), block_height.to_string()).map_err(|e| {
                 Error::SyncBlock(format!("Failed to write sync target - block height: {block_height}, error: {e:?}"))
             })?;
