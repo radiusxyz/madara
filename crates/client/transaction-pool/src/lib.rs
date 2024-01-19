@@ -252,7 +252,7 @@ pub trait EncryptedTransactionPool: TransactionPool {
     /// submit_one of TransactionPool trait and add order
     fn submit_one_with_order(
         &self,
-        at: &BlockId<Self::Block>,
+        at: <Self::Block as BlockT>::Hash,
         source: TransactionSource,
         xt: TransactionFor<Self>,
         order: u64,
@@ -261,7 +261,7 @@ pub trait EncryptedTransactionPool: TransactionPool {
     /// submit_at of TransactionPool trait and add order
     fn submit_at_with_order(
         &self,
-        at: &BlockId<Self::Block>,
+        at: <Self::Block as BlockT>::Hash,
         source: TransactionSource,
         xts: Vec<TransactionFor<Self>>,
         order: Option<u64>,
@@ -278,40 +278,30 @@ where
 {
     fn submit_one_with_order(
         &self,
-        at: &BlockId<Self::Block>,
+        at: <Self::Block as BlockT>::Hash,
         source: TransactionSource,
         xt: TransactionFor<Self>,
         order: u64,
     ) -> PoolFuture<TxHash<Self>, Self::Error> {
         let pool = self.pool.clone();
-        let at_hash = if let BlockId::Hash(hash) = *at {
-            hash
-        } else {
-            panic!("BlockId is not a hash");
-        };
 
         self.metrics.report(|metrics| metrics.submitted_transactions.inc());
 
-        async move { pool.submit_one(at_hash, source, xt, Some(order)).await }.boxed()
+        async move { pool.submit_one(at, source, xt, Some(order)).await }.boxed()
     }
 
     fn submit_at_with_order(
         &self,
-        at: &BlockId<Self::Block>,
+        at: <Self::Block as BlockT>::Hash,
         source: TransactionSource,
         xts: Vec<TransactionFor<Self>>,
         order: Option<u64>,
     ) -> PoolFuture<TxHashResults<Self, Self::Error>, Self::Error> {
         let pool = self.pool.clone();
-        let at_hash = if let BlockId::Hash(hash) = *at {
-            hash
-        } else {
-            panic!("BlockId is not a hash");
-        };
 
         self.metrics.report(|metrics| metrics.submitted_transactions.inc_by(xts.len() as u64));
 
-        async move { pool.submit_at(at_hash, source, xts, order).await }.boxed()
+        async move { pool.submit_at(at, source, xts, order).await }.boxed()
     }
 
     fn encrypted_pool(&self) -> Arc<TokioMutex<EncryptedPool>> {

@@ -1757,7 +1757,7 @@ where
     B: BlockT,
     <B as BlockT>::Extrinsic: Send + Sync + 'static,
 {
-    pool.submit_one_with_order(&SPBlockId::hash(best_block_hash), TX_SOURCE, extrinsic, order).await.map_err(|e| {
+    pool.submit_one_with_order(best_block_hash, TX_SOURCE, extrinsic, order).await.map_err(|e| {
         error!("Failed to submit extrinsic with order {order}: {e}");
         StarknetRpcApiError::InternalServerError
     })
