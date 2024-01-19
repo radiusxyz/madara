@@ -41,8 +41,8 @@ use sc_block_builder::{BlockBuilderApi, BlockBuilderProvider};
 use sc_client_api::backend;
 use sc_proposer_metrics::{EndProposingReason, MetricsLink as PrometheusMetrics};
 use sc_telemetry::{telemetry, TelemetryHandle, CONSENSUS_INFO};
-use sc_transaction_pool_api::InPoolTransaction;
-use sp_api::{ApiExt, ProvideRuntimeApi};
+use sc_transaction_pool_api::{InPoolTransaction, TransactionPool, TransactionSource};
+use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
 use sp_blockchain::ApplyExtrinsicFailed::Validity;
 use sp_blockchain::Error::ApplyExtrinsicFailed;
 use sp_blockchain::HeaderBackend;
@@ -400,8 +400,48 @@ where
 
             if is_using_encrypted_pool {
                 if !block_tx_pool.is_closed() {
+                    let temporary_pool: Vec<(u64, UserTransaction)> = {
+                        log::trace!("close on {}", block_height);
+                        log::debug!("test1 - tx_cnt: {}", block_tx_pool.get_tx_cnt(),);
+
+                        block_tx_pool.get_temporary_pool().to_vec()
+                    };
+
                     locked_encrypted_pool.close(block_height).unwrap();
                     drop(locked_encrypted_pool);
+
+                    // submit encrypted transactions with order
+                    let best_block_hash = self.client.info().best_hash;
+                    for (order, transaction) in temporary_pool {
+                        let extrinsic =
+                            match self.client.runtime_api().convert_transaction(best_block_hash, transaction.clone()) {
+                                Ok(ext_res) => match ext_res {
+                                    Ok(ext) => ext,
+                                    Err(e) => {
+                                        log::error!("Failed to convert transaction: {e:?}");
+                                        return Err(sp_blockchain::Error::Application(Box::new(std::io::Error::new(
+                                            std::io::ErrorKind::Other,
+                                            format!("{e:?}"),
+                                        ))));
+                                    }
+                                },
+                                Err(e) => {
+                                    log::error!("Failed to convert transaction: {e}");
+                                    return Err(sp_blockchain::Error::RuntimeApiError(ApiError::Application(
+                                        Box::new(e),
+                                    )));
+                                }
+                            };
+
+                        self.transaction_pool
+                            .clone()
+                            .submit_one_with_order(best_block_hash, TransactionSource::External, extrinsic, order)
+                            .await
+                            .map_err(|e: <A as TransactionPool>::Error| {
+                                log::error!("Failed to submit transaction with order: {e}");
+                                sp_blockchain::Error::Application(Box::new(e))
+                            })?;
+                    }
 
                     let cnt = {
                         encrypted_pool.lock().await.get_block_tx_pool(&block_height).unwrap().encrypted_txs_len() as u64
