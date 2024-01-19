@@ -6,10 +6,19 @@ use base64::Engine as _;
 use hyper::header::HeaderValue;
 use hyper::{body, Body, Client, Request, StatusCode};
 use mc_config::config_map;
+use once_cell::sync::OnceCell;
 use rocksdb::{IteratorMode, DB};
 use serde_json::{json, Value};
-use tokio::sync::OnceCell;
 use tokio::time::{sleep, Duration};
+
+// Create a global instance of SyncDB that can be accessed from other modules.
+// pub static SYNC_DB: OnceCell<Result<SyncDB, Box<dyn std::error::Error + Send + Sync>>> =
+// OnceCell::default();
+static SYNC_DB: OnceCell<SyncDB> = OnceCell::new();
+
+pub fn get_sync_db() -> Result<&'static SyncDB, Box<dyn std::error::Error + Send + Sync>> {
+    SYNC_DB.get_or_try_init(SyncDB::new_sync_db)
+}
 
 // Define a struct to hold the DB instance.
 pub struct SyncDB {
@@ -18,18 +27,34 @@ pub struct SyncDB {
 
 impl SyncDB {
     // Constructor to open the database.
-    fn open() -> Result<SyncDB, Box<dyn std::error::Error + Send + Sync>> {
+    fn new() -> Result<SyncDB, Box<dyn std::error::Error + Send + Sync>> {
         Ok(SyncDB { db: DB::open_default(Path::new("epool"))? })
     }
 
+    fn new_sync_db() -> Result<SyncDB, Box<dyn std::error::Error + Send + Sync>> {
+        let db = SyncDB::new().map_err(|e| {
+            log::error!("Failed to init sync database: {e:?}");
+            e
+        })?;
+
+        // Perform write operations here
+        db.write("sync".to_string(), "0".to_string()).map_err(|e| {
+            log::error!("Failed to write sync: {e:?}");
+            e
+        })?;
+        db.write("sync_target".to_string(), "0".to_string())?;
+        db.write("synced_da_block_height".to_string(), "0".to_string())?;
+
+        Ok(db)
+    }
+
     // Method to perform a read operation.
-    // 로직 수정(jaemin): read에서 실패하면, None이 아닌, 에러를 반환하도록 설정
     fn read(&self, key: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         // Serialize key to bytes
         let key_bytes = key.as_bytes();
 
         // Handle the None case.
-        let value_vec = self.db.get(key_bytes)?.unwrap_or_default();
+        let value_vec = self.db.get(key_bytes)?.ok_or("No value found for the given key")?;
 
         Ok(String::from_utf8(value_vec)?)
     }
@@ -81,26 +106,6 @@ impl SyncDB {
             Ok((key, val))
         })
     }
-}
-
-// Create a global instance of SyncDB that can be accessed from other modules.
-pub static SYNC_DB: OnceCell<Result<SyncDB, Box<dyn std::error::Error + Send + Sync>>> = OnceCell::const_new();
-
-pub fn new_sync_db() -> Result<SyncDB, Box<dyn std::error::Error + Send + Sync>> {
-    let db = SyncDB::open().map_err(|e| {
-        log::error!("Failed to init sync database: {e:?}");
-        e
-    })?;
-
-    // Perform write operations here
-    db.write("sync".to_string(), "0".to_string()).map_err(|e| {
-        log::error!("Failed to write sync: {e:?}");
-        e
-    })?;
-    db.write("sync_target".to_string(), "0".to_string())?;
-    db.write("synced_da_block_height".to_string(), "0".to_string())?;
-
-    Ok(db)
 }
 
 // Convert bytes to base64
@@ -237,7 +242,7 @@ pub async fn sync_with_da() {
         sleep(Duration::from_millis(3000)).await;
 
         // Initialize(if needed) or get a global instance of SyncDB that can be accessed from other modules.
-        let db = match SYNC_DB.get_or_init(|| async { new_sync_db() }).await {
+        let db = match get_sync_db() {
             Ok(sync_db) => sync_db,
             Err(_) => continue 'sync,
         };
