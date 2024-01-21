@@ -27,8 +27,7 @@ use starknet_core::types::{
 pub mod types;
 
 use crate::types::{
-    DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse,
-    ProvideDecryptionKeyResponse,
+    DecryptionInfo, EncryptedInvokeTransactionResult, EncryptedMempoolTransactionResult, ProvideDecryptionKeyResult,
 };
 
 #[serde_as]
@@ -65,7 +64,7 @@ pub trait StarknetWriteRpcApi {
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
         t: u64, //  Time - The number of calculations for how much time should be taken in VDF
-    ) -> RpcResult<EncryptedInvokeTransactionResponse>;
+    ) -> RpcResult<EncryptedInvokeTransactionResult>;
 
     // (For testing) Decrypt Encrypted Invoke Transaction
     #[method(name = "decryptEncryptedInvokeTransaction")]
@@ -80,12 +79,12 @@ pub trait StarknetWriteRpcApi {
     async fn add_encrypted_invoke_transaction(
         &self,
         encrypted_invoke_transaction: EncryptedInvokeTransaction,
-    ) -> RpcResult<EncryptedMempoolTransactionResponse>;
+    ) -> RpcResult<EncryptedMempoolTransactionResult>;
 
     /// Allow a client to pass the decryption key, after the client received the order_commitment
     /// from sequencer.
     #[method(name = "provideDecryptionKey")]
-    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResponse>;
+    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResult>;
 }
 
 /// Starknet rpc interface.

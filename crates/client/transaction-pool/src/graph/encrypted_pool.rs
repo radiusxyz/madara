@@ -109,6 +109,19 @@ impl BlockTransactionPool {
         self.decryption_keys.insert(order, true);
     }
 
+    /// delete invalid encrypted tx
+    pub fn delete_invalid_encrypted_tx(&mut self, order: u64) {
+        let Some(_) = self.encrypted_pool.remove(&order) else {
+            return log::info!("Not exist encrypted tx on {order:?}.");
+        };
+
+        self.decryption_keys.remove(&order);
+
+        self.order -= 1;
+
+        log::info!("Delete encrypted tx on {order:?}.");
+    }
+
     /// get key received information
     pub fn is_key_received(&self, order: u64) -> bool {
         self.decryption_keys.contains_key(&order)

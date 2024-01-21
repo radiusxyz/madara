@@ -19,8 +19,7 @@ use jsonrpsee::types::error::CallError;
 use log::error;
 use mc_db::Backend as MadaraBackend;
 use mc_rpc_core::types::{
-    DecryptionInfo, EncryptedInvokeTransactionResponse, EncryptedMempoolTransactionResponse,
-    ProvideDecryptionKeyResponse,
+    DecryptionInfo, EncryptedInvokeTransactionResult, EncryptedMempoolTransactionResult, ProvideDecryptionKeyResult,
 };
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetWriteRpcApiServer};
@@ -294,10 +293,12 @@ where
             let encrypted_mempool = self.pool.encrypted_pool().clone();
             let mut locked_encrypted_mempool = encrypted_mempool.lock().await;
 
-            if locked_encrypted_mempool.is_using_encrypted_pool() {
+            if !locked_encrypted_mempool.is_using_encrypted_pool() {
+                submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
+            } else {
                 let block_height = self.current_block_number()?;
-                let order;
                 let block_transaction_pool = locked_encrypted_mempool.get_or_init_block_tx_pool(block_height);
+                let order;
 
                 // If the block_transaction_pool is closed, the order should get from next block_transaction_pool
                 match block_transaction_pool.is_closed() {
@@ -323,8 +324,6 @@ where
                 }
 
                 submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
-            } else {
-                submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
             }
         }
 
@@ -392,28 +391,27 @@ where
     async fn add_encrypted_invoke_transaction(
         &self,
         encrypted_invoke_transaction: EncryptedInvokeTransaction,
-    ) -> RpcResult<EncryptedMempoolTransactionResponse> {
+    ) -> RpcResult<EncryptedMempoolTransactionResult> {
         let encrypted_pool = self.pool.encrypted_pool();
         let mut block_height = self.current_block_number()?;
 
         let order = {
-            let mut locked_encrypted_pool = encrypted_pool.lock().await;
+            let mut locked_encrypted_mempool = encrypted_pool.lock().await;
 
-            if !locked_encrypted_pool.is_using_encrypted_pool() {
+            if !locked_encrypted_mempool.is_using_encrypted_pool() {
                 return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
             }
 
-            let block_transaction_pool: &mut mc_transaction_pool::BlockTransactionPool =
-                locked_encrypted_pool.get_or_init_block_tx_pool(block_height);
+            let block_transaction_pool = locked_encrypted_mempool.get_or_init_block_tx_pool(block_height);
 
-            if block_transaction_pool.is_closed() {
+            if !block_transaction_pool.is_closed() {
+                block_transaction_pool.add_encrypted_invoke_tx(encrypted_invoke_transaction.clone())
+            } else {
                 block_height += 1;
+                log::info!("{} is closed.. push on next block transaction pool on {}", block_height - 1, block_height);
+                let next_block_transaction_pool = locked_encrypted_mempool.get_or_init_block_tx_pool(block_height);
+                next_block_transaction_pool.add_encrypted_invoke_tx(encrypted_invoke_transaction.clone())
             }
-
-            let order = block_transaction_pool.get_order();
-            block_transaction_pool.add_encrypted_invoke_tx(encrypted_invoke_transaction.clone());
-
-            order
         };
 
         let encrypted_invoke_transaction_string = serde_json::to_string(&encrypted_invoke_transaction)?;
@@ -423,10 +421,10 @@ where
 
         let signature = sign_message(message)?;
 
-        Ok(EncryptedMempoolTransactionResponse { block_number: block_height, order, signature })
+        Ok(EncryptedMempoolTransactionResult { block_number: block_height, order, signature })
     }
 
-    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResponse> {
+    async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResult> {
         let encrypted_pool = self.pool.encrypted_pool().clone();
         let block_height = decryption_info.block_number;
 
@@ -501,7 +499,7 @@ where
                 submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, decryption_info.order)
                     .await?;
 
-                Ok(ProvideDecryptionKeyResponse {
+                Ok(ProvideDecryptionKeyResult {
                     transaction_hash: transaction.compute_hash::<H>(chain_id, false).into(),
                 })
             }
@@ -516,7 +514,7 @@ where
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
         t: u64, // Time - The number of calculations for how much time should be taken in VDF
-    ) -> RpcResult<EncryptedInvokeTransactionResponse> {
+    ) -> RpcResult<EncryptedInvokeTransactionResult> {
         let base = 10; // Expression base (e.g. 10 == decimal / 16 == hex)
         let lambda = 2048; // N's bits (ex. RSA-2048 => lambda = 2048)
         let vdf: VDF = VDF::new(lambda, base);
@@ -546,7 +544,7 @@ where
 
         let encryption_key = SequencerPoseidonEncryption::calculate_secret_key(y.as_bytes());
         let (encrypted_data, nonce, _, _) = SequencerPoseidonEncryption::new().encrypt(invoke_tx_str, encryption_key);
-        Ok(EncryptedInvokeTransactionResponse {
+        Ok(EncryptedInvokeTransactionResult {
             encrypted_invoke_transaction: EncryptedInvokeTransaction {
                 encrypted_data,
                 nonce: format!("{nonce:x}"),

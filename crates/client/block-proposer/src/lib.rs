@@ -427,7 +427,21 @@ where
                     log::trace!("{} waiting {}:{}:{}", block_height, tx_cnt, dec_cnt, ready_cnt);
 
                     if tx_cnt != dec_cnt || dec_cnt != ready_cnt {
-                        return Err(sp_blockchain::Error::TransactionPoolNotReady);
+                        log::warn!(
+                            "block height: {}, order: {}, waiting [tx cnt]:[decrypted tx cnt]:[ready cnt] = {}:{}:{}",
+                            block_height,
+                            block_tx_pool.get_order(),
+                            tx_cnt,
+                            dec_cnt,
+                            ready_cnt
+                        );
+                        // block_tx_pool =
+                        // locked_encrypted_pool.get_mut_block_tx_pool(&(block_height -
+                        // 1)).unwrap(); let order =
+                        // block_tx_pool.get_order(); block_tx_pool.
+                        // delete_invalid_encrypted_tx(order - 1);
+
+                        // return Err(sp_blockchain::Error::TransactionPoolNotReady);
                     }
                 }
             }
@@ -626,14 +640,14 @@ where
                 tokio::time::sleep(Duration::from_secs(1)).await;
 
                 let encrypted_invoke_transaction: EncryptedInvokeTransaction;
-                if let Some(txs) = encrypted_mempool.lock().await.get_block_tx_pool(&block_height) {
-                    if txs.is_key_received(order) {
+                if let Some(block_transaction_pool) = encrypted_mempool.lock().await.get_block_tx_pool(&block_height) {
+                    if block_transaction_pool.is_key_received(order) {
                         info!("Received key! No need for decrypt.");
                         return;
                     }
                     log::info!("Not received key. Encrypted tx is required to proceed.");
 
-                    encrypted_invoke_transaction = match txs.get_encrypted_invoke_tx(order) {
+                    encrypted_invoke_transaction = match block_transaction_pool.get_encrypted_invoke_tx(order) {
                         Ok(encrypted_tx) => encrypted_tx.clone(),
                         Err(e) => {
                             log::error!("Failed to get encrypted_invoke_transaction: {}", e);
@@ -656,7 +670,11 @@ where
                 let invoke_tx = match invoke_tx_result {
                     Ok(tx) => tx,
                     Err(e) => {
-                        log::error!("Error while decrypting transaction: {}", e);
+                        log::error!("Error while decrypting transaction: {e}");
+                        let mut locked_encrypted_mempool = encrypted_mempool.lock().await;
+                        let block_tx_pool = locked_encrypted_mempool.get_mut_block_tx_pool(&block_height).unwrap();
+                        block_tx_pool.delete_invalid_encrypted_tx(order);
+
                         return;
                     }
                 };
