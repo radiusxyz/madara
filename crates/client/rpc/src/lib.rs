@@ -435,7 +435,11 @@ where
                 return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
             }
 
-            let block_transaction_pool = locked_encrypted_pool.get_or_init_block_tx_pool(block_height);
+            let block_transaction_pool = locked_encrypted_pool.get_mut_block_tx_pool(&block_height).ok_or({
+                error!("Failed to get block transaction pool for block height: {block_height}");
+                StarknetRpcApiError::InternalServerError
+            })?;
+
             let encrypted_invoke_transaction = block_transaction_pool
                 .get_encrypted_invoke_tx(decryption_info.order)
                 .map_err(|_| {

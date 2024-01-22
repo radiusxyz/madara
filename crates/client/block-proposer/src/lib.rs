@@ -695,7 +695,7 @@ where
                     Ok(duration) => duration,
                     Err(e) => {
                         log::error!("System time error: {:?}", e);
-                        return; // 오류 처리 후 함수 종료
+                        return;
                     }
                 };
                 log::info!("Decrypt {} End in {:?}", order, since_the_epoch);
