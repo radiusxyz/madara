@@ -9,9 +9,10 @@ use jsonrpsee::ws_client::WsClientBuilder;
 use mc_config::config_map;
 use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction};
 use serde_json::json;
+use vdf::VDF;
 
+// use crate::vdf::VDF;
 use crate::error::{Error, Result};
-use crate::vdf::Vdf;
 
 /// Decryptor has delay function for calculate decryption key and
 /// decrypt function for decryption with poseidon algorithm
@@ -25,14 +26,15 @@ static CURRENT_INDEX: AtomicUsize = AtomicUsize::new(0);
 #[derive(Clone)]
 pub struct Decryptor {
     decrypt_function: SequencerPoseidonEncryption,
-    delay_function: Vdf,
+    delay_function: VDF,
 }
 
 impl Default for Decryptor {
     fn default() -> Self {
         let base = 10; // Expression base (e.g. 10 == decimal / 16 == hex)
+        let lambda = 2048; // N's bits (ex. RSA-2048 => lambda = 2048)
 
-        Self { decrypt_function: SequencerPoseidonEncryption::new(), delay_function: Vdf::new(base) }
+        Self { decrypt_function: SequencerPoseidonEncryption::new(), delay_function: VDF::new(lambda, base) }
     }
 }
 

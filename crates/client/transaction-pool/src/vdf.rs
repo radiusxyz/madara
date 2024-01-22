@@ -26,13 +26,13 @@ macro_rules! init_big_int_from_string {
 }
 
 #[derive(Clone, Copy)]
-pub struct Vdf {
+pub struct VDF {
     base: i32,
 }
 
-impl Vdf {
-    pub fn new(base: i32) -> Vdf {
-        Vdf { base }
+impl VDF {
+    pub fn new(base: i32) -> VDF {
+        VDF { base }
     }
 
     fn mpz_t_to_string(data: &gmp::mpz_t, base: i32) -> String {
@@ -60,6 +60,6 @@ impl Vdf {
         }
 
         // mpz_t -> String
-        Vdf::mpz_t_to_string(y, self.base)
+        VDF::mpz_t_to_string(y, self.base)
     }
 }

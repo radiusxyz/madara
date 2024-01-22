@@ -67,6 +67,10 @@ rand = "0.8"
 mc-config = { workspace = true }
 tokio = { workspace = true, default-features = true, features = ["time"] }
 
+# Todo(jaemin): Remove this dependency. This is only used for testing.
+vdf = { git = "https://github.com/radiusxyz/vdf" }
+encryptor = { git = "https://github.com/radiusxyz/encryptor" }
+
 [dev-dependencies]
 rstest = { workspace = true }
 pretty_assertions = { workspace = true }

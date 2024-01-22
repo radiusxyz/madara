@@ -26,7 +26,9 @@ use starknet_core::types::{
 };
 pub mod types;
 
-use crate::types::{DecryptionInfo, EncryptedMempoolTransactionResult, ProvideDecryptionKeyResult};
+use crate::types::{
+    DecryptionInfo, EncryptedInvokeTransactionResult, EncryptedMempoolTransactionResult, ProvideDecryptionKeyResult,
+};
 
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -55,6 +57,14 @@ pub trait StarknetWriteRpcApi {
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
     ) -> RpcResult<DeclareTransactionResult>;
+
+    // (For testing) Encrypt Invoke Transaction
+    #[method(name = "encryptInvokeTransaction")]
+    fn encrypt_invoke_transaction(
+        &self,
+        invoke_transaction: BroadcastedInvokeTransaction,
+        t: u64, //  Time - The number of calculations for how much time should be taken in VDF
+    ) -> RpcResult<EncryptedInvokeTransactionResult>;
 
     // (For testing) Decrypt Encrypted Invoke Transaction
     #[method(name = "decryptEncryptedInvokeTransaction")]

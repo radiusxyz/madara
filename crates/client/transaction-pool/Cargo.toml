@@ -55,6 +55,7 @@ jsonrpsee = { version = "0.20", features = [
 # for decryptor and encryptor
 gmp-mpfr-sys = { version = "1.4.7" }
 encryptor = { git = "https://github.com/radiusxyz/encryptor" }
+vdf = { git = "https://github.com/radiusxyz/vdf" }
 
 [dev-dependencies]
 substrate-test-runtime = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.3.0" }

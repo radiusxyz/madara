@@ -6,18 +6,23 @@ mod constants;
 mod errors;
 mod events;
 mod madara_backend_client;
-mod sign;
 mod types;
+// Todo(jaemin): To be removed. This is for testing.
+mod utils;
 
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+// Todo(jaemin): To be removed. This is for testing.
+use encryptor::SequencerPoseidonEncryption;
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use jsonrpsee::types::error::CallError;
 use log::error;
 use mc_db::Backend as MadaraBackend;
-use mc_rpc_core::types::{DecryptionInfo, EncryptedMempoolTransactionResult, ProvideDecryptionKeyResult};
+use mc_rpc_core::types::{
+    DecryptionInfo, EncryptedInvokeTransactionResult, EncryptedMempoolTransactionResult, ProvideDecryptionKeyResult,
+};
 pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
@@ -35,7 +40,6 @@ use sc_client_api::BlockBackend;
 use sc_network_sync::SyncingService;
 use sc_transaction_pool_api::error::{Error as PoolError, IntoPoolError};
 use sc_transaction_pool_api::{TransactionPool, TransactionSource};
-use sign::{sign_message, verify_sign};
 use sp_api::{ApiError, ProvideRuntimeApi};
 use sp_arithmetic::traits::UniqueSaturatedInto;
 use sp_blockchain::HeaderBackend;
@@ -53,6 +57,9 @@ use starknet_core::types::{
     MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingTransactionReceipt, StateDiff, StateUpdate,
     SyncStatus, SyncStatusType, Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
+use utils::{check_message_validity, sign_message, verify_sign};
+// Todo(jaemin): To be removed. This is for testing.
+use vdf::{ReturnData, VDF};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::types::RpcEventFilter;
@@ -507,6 +514,53 @@ where
                 return Err(StarknetRpcApiError::InvalidSignature.into());
             }
         }
+    }
+
+    // Todo(jaemin): To be removed. This is for testing.
+    fn encrypt_invoke_transaction(
+        &self,
+        invoke_transaction: BroadcastedInvokeTransaction,
+        t: u64, // Time - The number of calculations for how much time should be taken in VDF
+    ) -> RpcResult<EncryptedInvokeTransactionResult> {
+        let base = 10; // Expression base (e.g. 10 == decimal / 16 == hex)
+        let lambda = 2048; // N's bits (ex. RSA-2048 => lambda = 2048)
+        let vdf: VDF = VDF::new(lambda, base);
+
+        let param = vdf.setup(t); // Generate parameters (it returns value as json string)
+        let params: ReturnData = serde_json::from_str(param.as_str())?; // Parsing parameters
+
+        // 1. Use trapdoor
+        let y = vdf.evaluate_with_trapdoor(params.t, params.g.clone(), params.n.clone(), params.remainder.clone());
+
+        let invoke_tx = UserTransaction::try_from(invoke_transaction).map_err(|e| {
+            error!("Failed to convert BroadcastedInvokeTransaction to UserTransaction: {e:?}");
+            StarknetRpcApiError::InternalServerError
+        })?;
+        let invoke_tx_str: String = match invoke_tx {
+            UserTransaction::Invoke(invoke_tx) => serde_json::to_string(&invoke_tx)?,
+            _ => {
+                log::error!("Try to encrypt not invoke transaction");
+                return Err(StarknetRpcApiError::InternalServerError.into());
+            }
+        };
+
+        if !check_message_validity(invoke_tx_str.as_bytes()) {
+            log::error!("Invalid invoke transaction");
+            return Err(StarknetRpcApiError::InternalServerError.into());
+        }
+
+        let encryption_key = SequencerPoseidonEncryption::calculate_secret_key(y.as_bytes());
+        let (encrypted_data, nonce, _, _) = SequencerPoseidonEncryption::new().encrypt(invoke_tx_str, encryption_key);
+        Ok(EncryptedInvokeTransactionResult {
+            encrypted_invoke_transaction: EncryptedInvokeTransaction {
+                encrypted_data,
+                nonce: format!("{nonce:x}"),
+                t,
+                g: params.g.clone(),
+                n: params.n.clone(),
+            },
+            decryption_key: y,
+        })
     }
 
     async fn decrypt_encrypted_invoke_transaction(
