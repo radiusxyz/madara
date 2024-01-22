@@ -36,8 +36,6 @@ sp-transaction-pool = { workspace = true }
 thiserror = { workspace = true }
 
 serde_json = { workspace = true, default-features = true }
-encryptor = { workspace = true }
-vdf = { workspace = true }
 starknet-crypto = { workspace = true, default-features = false, features = [
   "alloc",
 ] }
@@ -53,6 +51,10 @@ jsonrpsee = { version = "0.20", features = [
 	"macros",
 	"client-ws-transport-native-tls",
 ] }
+
+# for decryptor and encryptor
+gmp-mpfr-sys = { version = "1.4.7" }
+encryptor = { git = "https://github.com/radiusxyz/encryptor" }
 
 [dev-dependencies]
 substrate-test-runtime = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.3.0" }

@@ -29,7 +29,7 @@ pub mod error;
 mod graph;
 mod metrics;
 mod revalidation;
-
+mod vdf;
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Arc;
