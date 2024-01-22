@@ -7396,6 +7396,7 @@ name = "mp-transactions"
 version = "0.6.0"
 dependencies = [
  "assert_matches",
+ "avail-subxt",
  "blockifier",
  "cairo-lang-casm-contract-class",
  "cairo-lang-starknet",
@@ -7412,6 +7413,7 @@ dependencies = [
  "scale-info",
  "serde",
  "serde_json",
+ "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=release-polkadot-v1.3.0)",
  "starknet-core",
  "starknet-crypto",
  "starknet-ff",
