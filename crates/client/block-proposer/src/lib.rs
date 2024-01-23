@@ -660,7 +660,6 @@ where
                     }
                 } else {
                     log::error!("Something wrong. Not exist block_height: {}", block_height);
-                    // 여기서는 error를 반환하고 프로세스를 종료해야함.
                     return;
                 };
 

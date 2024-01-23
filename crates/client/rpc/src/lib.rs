@@ -27,6 +27,7 @@ pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
 use mc_transaction_pool::decryptor::Decryptor;
+use mc_transaction_pool::vdf::{ReturnData, VDF};
 use mc_transaction_pool::{ChainApi, EncryptedTransactionPool, Pool};
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use mp_hashers::pedersen::PedersenHasher;
@@ -58,8 +59,6 @@ use starknet_core::types::{
     SyncStatus, SyncStatusType, Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
 use utils::{check_message_validity, sign_message, verify_sign};
-// Todo(jaemin): To be removed. This is for testing.
-use vdf::{ReturnData, VDF};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::types::RpcEventFilter;

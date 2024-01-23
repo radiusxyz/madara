@@ -9,10 +9,9 @@ use jsonrpsee::ws_client::WsClientBuilder;
 use mc_config::config_map;
 use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction};
 use serde_json::json;
-use vdf::VDF;
 
-// use crate::vdf::VDF;
 use crate::error::{Error, Result};
+use crate::vdf::VDF;
 
 /// Decryptor has delay function for calculate decryption key and
 /// decrypt function for decryption with poseidon algorithm
