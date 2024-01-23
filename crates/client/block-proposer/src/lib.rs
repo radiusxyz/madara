@@ -390,62 +390,66 @@ where
             )))
         })? + 1;
 
-        {
+        let (is_using_encrypted_pool, using_external_decryptor, cnt, block_tx_pool_is_closed) = {
             let mut locked_encrypted_pool = encrypted_pool.lock().await;
-            let (is_using_encrypted_pool, using_external_decryptor, block_tx_pool) = (
-                locked_encrypted_pool.is_using_encrypted_pool(),
-                locked_encrypted_pool.is_using_external_decryptor(),
-                locked_encrypted_pool.get_or_init_block_tx_pool(block_height),
-            );
+            let is_using_encrypted_pool = locked_encrypted_pool.is_using_encrypted_pool();
+            let using_external_decryptor = locked_encrypted_pool.is_using_external_decryptor();
+            let block_tx_pool = locked_encrypted_pool.get_or_init_block_tx_pool(block_height);
+            let block_tx_pool_is_closed = block_tx_pool.is_closed();
 
-            if is_using_encrypted_pool {
-                if !block_tx_pool.is_closed() {
-                    locked_encrypted_pool.close(block_height).unwrap();
-                    drop(locked_encrypted_pool);
+            let cnt = if is_using_encrypted_pool && !block_tx_pool_is_closed {
+                locked_encrypted_pool.close(block_height).unwrap();
+                locked_encrypted_pool.get_block_tx_pool(&block_height).unwrap().encrypted_txs_len() as u64
+            } else {
+                0
+            };
 
-                    let cnt = {
-                        encrypted_pool.lock().await.get_block_tx_pool(&block_height).unwrap().encrypted_txs_len() as u64
-                    };
+            (is_using_encrypted_pool, using_external_decryptor, cnt, block_tx_pool_is_closed)
+        };
 
-                    let start = std::time::SystemTime::now();
-                    let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
-                    log::info!("Decrypt Start in {:?}", since_the_epoch);
+        if is_using_encrypted_pool && !block_tx_pool_is_closed {
+            let start = std::time::SystemTime::now();
+            let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
+            log::info!("Decrypt Start in {:?}", since_the_epoch);
 
-                    for order in 0..cnt {
-                        self.decrypt_and_submit_transaction(order, using_external_decryptor);
-                    }
-                } else {
-                    drop(locked_encrypted_pool)
-                }
+            for order in 0..cnt {
+                self.decrypt_and_submit_transaction(order, using_external_decryptor);
+            }
+        }
 
-                let locked_encrypted_pool = encrypted_pool.lock().await;
-                if locked_encrypted_pool.exist(block_height) {
-                    let block_tx_pool = locked_encrypted_pool.get_block_tx_pool(&block_height).unwrap();
-                    let tx_cnt = block_tx_pool.get_tx_cnt();
-                    let dec_cnt = block_tx_pool.get_decrypted_tx_count();
-                    let ready_cnt = self.transaction_pool.status().ready as u64;
-                    log::trace!("{} waiting {}:{}:{}", block_height, tx_cnt, dec_cnt, ready_cnt);
-
-                    if tx_cnt != dec_cnt || dec_cnt != ready_cnt {
-                        log::warn!(
-                            "block height: {}, order: {}, waiting [tx cnt]:[decrypted tx cnt]:[ready cnt] = {}:{}:{}",
-                            block_height,
-                            block_tx_pool.get_order(),
-                            tx_cnt,
-                            dec_cnt,
-                            ready_cnt
-                        );
-                        // block_tx_pool =
-                        // locked_encrypted_pool.get_mut_block_tx_pool(&(block_height -
-                        // 1)).unwrap(); let order =
-                        // block_tx_pool.get_order(); block_tx_pool.
-                        // delete_invalid_encrypted_tx(order - 1);
-
-                        // return Err(sp_blockchain::Error::TransactionPoolNotReady);
-                    }
-                }
+        let (order, tx_cnt, dec_cnt, ready_cnt) = {
+            let locked_encrypted_pool = encrypted_pool.lock().await;
+            if let Some(block_tx_pool) = locked_encrypted_pool.get_block_tx_pool(&block_height) {
+                let order = block_tx_pool.get_order();
+                let tx_cnt = block_tx_pool.get_tx_cnt();
+                let dec_cnt = block_tx_pool.get_decrypted_tx_count();
+                let ready_cnt = self.transaction_pool.status().ready as u64;
+                (order, tx_cnt, dec_cnt, ready_cnt)
+            } else {
+                (0, 0, 0, 0)
             }
         };
+
+        log::trace!("{} waiting {}:{}:{}", block_height, tx_cnt, dec_cnt, ready_cnt);
+
+        if tx_cnt != dec_cnt || dec_cnt != ready_cnt {
+            log::warn!(
+                "block height: {}, order: {}, waiting [tx cnt]:[decrypted tx cnt]:[ready cnt] = {}:{}:{}",
+                block_height,
+                order,
+                tx_cnt,
+                dec_cnt,
+                ready_cnt
+            );
+            // block_tx_pool =
+            // locked_encrypted_pool.get_mut_block_tx_pool(&(block_height -
+            // 1)).unwrap(); let order =
+            // block_tx_pool.get_order(); block_tx_pool.
+            // delete_invalid_encrypted_tx(order - 1);
+
+            // return Err(sp_blockchain::Error::TransactionPoolNotReady);
+        }
+
         // proceed with transactions
         // We calculate soft deadline used only in case we start skipping transactions.
         let now = (self.now)();
