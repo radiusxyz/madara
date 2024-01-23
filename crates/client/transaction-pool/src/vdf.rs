@@ -79,7 +79,7 @@ impl VDF {
     fn mpz_t_to_string(data: &gmp::mpz_t, base: i32) -> String {
         let return_data;
         unsafe {
-            let len = gmp::mpz_sizeinbase(data, base) as usize + 2;
+            let len = gmp::mpz_sizeinbase(data, base) + 2;
             let mut vector: Vec<u8> = Vec::with_capacity(len);
             gmp::mpz_get_str(vector.as_mut_ptr() as *mut c_char, base, data);
             return_data = CStr::from_ptr(vector.as_mut_ptr() as *mut c_char).to_str().unwrap().to_string();
