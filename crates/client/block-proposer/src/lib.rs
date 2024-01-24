@@ -387,7 +387,7 @@ where
             let mut locked_encrypted_pool = encrypted_pool.lock().await;
             let is_using_encrypted_pool = locked_encrypted_pool.is_using_encrypted_pool();
 
-            if is_using_encrypted_pool {
+            if !is_using_encrypted_pool {
                 (is_using_encrypted_pool, false, 0, true)
             } else {
                 let using_external_decryptor = locked_encrypted_pool.is_using_external_decryptor();
