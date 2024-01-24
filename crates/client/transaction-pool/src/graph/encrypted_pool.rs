@@ -100,7 +100,7 @@ impl BlockTransactionPool {
     }
 
     /// get decrypted tx count
-    pub fn get_decrypted_tx_count(&self) -> u64 {
+    pub fn get_submitted_tx_count(&self) -> u64 {
         self.decrypted_tx_count + self.raw_tx_count
     }
 

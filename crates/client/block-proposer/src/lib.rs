@@ -382,29 +382,46 @@ where
         deadline: time::Instant,
         block_size_limit: Option<usize>,
     ) -> Result<EndProposingReason, sp_blockchain::Error> {
-        let encrypted_pool = self.transaction_pool.encrypted_pool().clone();
-        let block_height = self.parent_number.to_string().parse::<u64>().map_err(|e| {
-            sp_blockchain::Error::Application(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Failed to parse block height: {e}"),
-            )))
-        })? + 1;
-
-        let (is_using_encrypted_pool, using_external_decryptor, cnt, block_tx_pool_is_closed) = {
+        let (is_using_encrypted_pool, using_external_decryptor, encrypted_txs_len, block_tx_pool_is_closed) = {
+            let encrypted_pool = self.transaction_pool.encrypted_pool().clone();
             let mut locked_encrypted_pool = encrypted_pool.lock().await;
             let is_using_encrypted_pool = locked_encrypted_pool.is_using_encrypted_pool();
-            let using_external_decryptor = locked_encrypted_pool.is_using_external_decryptor();
-            let block_tx_pool = locked_encrypted_pool.get_or_init_block_tx_pool(block_height);
-            let block_tx_pool_is_closed = block_tx_pool.is_closed();
 
-            let cnt = if is_using_encrypted_pool && !block_tx_pool_is_closed {
-                locked_encrypted_pool.close(block_height).unwrap();
-                locked_encrypted_pool.get_block_tx_pool(&block_height).unwrap().encrypted_txs_len() as u64
+            if is_using_encrypted_pool {
+                (is_using_encrypted_pool, false, 0, true)
             } else {
-                0
-            };
+                let using_external_decryptor = locked_encrypted_pool.is_using_external_decryptor();
+                let block_height = self.parent_number.to_string().parse::<u64>().map_err(|e| {
+                    sp_blockchain::Error::Application(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Failed to parse block height: {e}"),
+                    )))
+                })? + 1;
+                let block_tx_pool = locked_encrypted_pool.get_or_init_block_tx_pool(block_height);
+                let block_tx_pool_is_closed = block_tx_pool.is_closed();
 
-            (is_using_encrypted_pool, using_external_decryptor, cnt, block_tx_pool_is_closed)
+                let order = block_tx_pool.get_order();
+                let tx_cnt = block_tx_pool.get_tx_cnt();
+                let dec_cnt = block_tx_pool.get_submitted_tx_count();
+                let ready_cnt = self.transaction_pool.status().ready as u64;
+                log::info!(
+                    "block height: {}, current order: {}, (tx count:submitted tx count:ready count) = ({}:{}:{})",
+                    block_height,
+                    order,
+                    tx_cnt,
+                    dec_cnt,
+                    ready_cnt
+                );
+
+                let encrypted_txs_len = if !block_tx_pool_is_closed {
+                    locked_encrypted_pool.close(block_height).unwrap();
+                    locked_encrypted_pool.get_block_tx_pool(&block_height).unwrap().encrypted_txs_len() as u64
+                } else {
+                    0
+                };
+
+                (is_using_encrypted_pool, using_external_decryptor, encrypted_txs_len, block_tx_pool_is_closed)
+            }
         };
 
         if is_using_encrypted_pool && !block_tx_pool_is_closed {
@@ -412,42 +429,9 @@ where
             let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
             log::info!("Decrypt Start in {:?}", since_the_epoch);
 
-            for order in 0..cnt {
+            for order in 0..encrypted_txs_len {
                 self.decrypt_and_submit_transaction(order, using_external_decryptor);
             }
-        }
-
-        let (order, tx_cnt, dec_cnt, ready_cnt) = {
-            let locked_encrypted_pool = encrypted_pool.lock().await;
-            if let Some(block_tx_pool) = locked_encrypted_pool.get_block_tx_pool(&block_height) {
-                let order = block_tx_pool.get_order();
-                let tx_cnt = block_tx_pool.get_tx_cnt();
-                let dec_cnt = block_tx_pool.get_decrypted_tx_count();
-                let ready_cnt = self.transaction_pool.status().ready as u64;
-                (order, tx_cnt, dec_cnt, ready_cnt)
-            } else {
-                (0, 0, 0, 0)
-            }
-        };
-
-        log::trace!("{} waiting {}:{}:{}", block_height, tx_cnt, dec_cnt, ready_cnt);
-
-        if tx_cnt != dec_cnt || dec_cnt != ready_cnt {
-            log::warn!(
-                "block height: {}, order: {}, waiting [tx cnt]:[decrypted tx cnt]:[ready cnt] = {}:{}:{}",
-                block_height,
-                order,
-                tx_cnt,
-                dec_cnt,
-                ready_cnt
-            );
-            // block_tx_pool =
-            // locked_encrypted_pool.get_mut_block_tx_pool(&(block_height -
-            // 1)).unwrap(); let order =
-            // block_tx_pool.get_order(); block_tx_pool.
-            // delete_invalid_encrypted_tx(order - 1);
-
-            // return Err(sp_blockchain::Error::TransactionPoolNotReady);
         }
 
         // proceed with transactions

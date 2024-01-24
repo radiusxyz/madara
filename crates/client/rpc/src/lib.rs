@@ -312,7 +312,7 @@ where
                     block_transaction_pool
                 };
 
-                let order = target_block_transaction_pool.increase_raw_tx_count();
+                let order = target_block_transaction_pool.increase_raw_tx_count() - 1;
 
                 submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
             }
