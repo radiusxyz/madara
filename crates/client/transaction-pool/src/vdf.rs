@@ -59,14 +59,14 @@ pub struct ReturnData {
 }
 
 #[derive(Clone, Copy)]
-pub struct VDF {
+pub struct Vdf {
     lambda: gmp::bitcnt_t,
     base: i32,
 }
 
-impl VDF {
-    pub fn new(lambda: u64, base: i32) -> VDF {
-        VDF { lambda, base }
+impl Vdf {
+    pub fn new(lambda: u64, base: i32) -> Vdf {
+        Vdf { lambda, base }
     }
 
     fn generate_prime(rop: *mut gmp::mpz_t, rstate: *mut gmp::randstate_t, n: gmp::bitcnt_t) {
@@ -91,8 +91,8 @@ impl VDF {
         init_randstate!(rstate);
         init_big_int!(p);
         init_big_int!(q);
-        VDF::generate_prime(p, rstate, self.lambda / 2);
-        VDF::generate_prime(q, rstate, self.lambda / 2);
+        Vdf::generate_prime(p, rstate, self.lambda / 2);
+        Vdf::generate_prime(q, rstate, self.lambda / 2);
         init_big_int!(n);
         init_big_int!(pi_n);
         init_big_int!(g);
@@ -124,21 +124,21 @@ impl VDF {
             gmp::mpz_fdiv_q(quotient, two_two_t, pi_n);
         }
 
-        let g_string = VDF::mpz_t_to_string(g, self.base);
+        let g_string = Vdf::mpz_t_to_string(g, self.base);
 
-        let two_t_string = VDF::mpz_t_to_string(two_t, self.base);
-        let two_two_t_string = VDF::mpz_t_to_string(two_two_t, self.base);
+        let two_t_string = Vdf::mpz_t_to_string(two_t, self.base);
+        let two_two_t_string = Vdf::mpz_t_to_string(two_two_t, self.base);
 
-        let p_string = VDF::mpz_t_to_string(p, self.base);
-        let q_string = VDF::mpz_t_to_string(q, self.base);
-        let n_string = VDF::mpz_t_to_string(n, self.base);
+        let p_string = Vdf::mpz_t_to_string(p, self.base);
+        let q_string = Vdf::mpz_t_to_string(q, self.base);
+        let n_string = Vdf::mpz_t_to_string(n, self.base);
 
-        let p_minus_one_string = VDF::mpz_t_to_string(p_minus_one, self.base);
-        let q_minus_one_string = VDF::mpz_t_to_string(q_minus_one, self.base);
-        let pi_n_string = VDF::mpz_t_to_string(pi_n, self.base);
+        let p_minus_one_string = Vdf::mpz_t_to_string(p_minus_one, self.base);
+        let q_minus_one_string = Vdf::mpz_t_to_string(q_minus_one, self.base);
+        let pi_n_string = Vdf::mpz_t_to_string(pi_n, self.base);
 
-        let quotient_string = VDF::mpz_t_to_string(quotient, self.base);
-        let remainder_string = VDF::mpz_t_to_string(remainder, self.base);
+        let quotient_string = Vdf::mpz_t_to_string(quotient, self.base);
+        let remainder_string = Vdf::mpz_t_to_string(remainder, self.base);
 
         let r_data = ReturnData {
             g: g_string,
@@ -175,7 +175,7 @@ impl VDF {
         }
 
         // mpz_t -> String
-        VDF::mpz_t_to_string(y, self.base)
+        Vdf::mpz_t_to_string(y, self.base)
     }
 
     pub fn evaluate_with_trapdoor(&self, _t: u64, _g: String, _n: String, _trapdoor: String) -> String {
@@ -190,6 +190,6 @@ impl VDF {
         }
 
         // mpz_t -> String
-        VDF::mpz_t_to_string(y, self.base)
+        Vdf::mpz_t_to_string(y, self.base)
     }
 }

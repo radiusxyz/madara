@@ -27,7 +27,7 @@ pub use mc_rpc_core::utils::*;
 pub use mc_rpc_core::{Felt, StarknetReadRpcApiServer, StarknetWriteRpcApiServer};
 use mc_storage::OverrideHandle;
 use mc_transaction_pool::decryptor::Decryptor;
-use mc_transaction_pool::vdf::{ReturnData, VDF};
+use mc_transaction_pool::vdf::{ReturnData, Vdf};
 use mc_transaction_pool::{ChainApi, EncryptedTransactionPool, Pool};
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use mp_hashers::pedersen::PedersenHasher;
@@ -300,30 +300,19 @@ where
             } else {
                 let block_height = self.current_block_number()?;
                 let block_transaction_pool = locked_encrypted_mempool.get_or_init_block_tx_pool(block_height);
-                let order;
 
                 // If the block_transaction_pool is closed, the order should get from next block_transaction_pool
-                match block_transaction_pool.is_closed() {
-                    true => {
-                        let next_block_height = block_height + 1;
+                let target_block_transaction_pool = if block_transaction_pool.is_closed() {
+                    let next_block_height = block_height + 1;
 
-                        log::info!(
-                            "{} is closed.. push on next block transaction pool on {}",
-                            block_height,
-                            next_block_height
-                        );
+                    log::info!("{block_height} is closed.. push on next block transaction pool on {next_block_height}",);
 
-                        let next_block_transaction_pool =
-                            locked_encrypted_mempool.get_or_init_block_tx_pool(next_block_height);
+                    locked_encrypted_mempool.get_or_init_block_tx_pool(next_block_height)
+                } else {
+                    block_transaction_pool
+                };
 
-                        order = next_block_transaction_pool.get_order();
-                        next_block_transaction_pool.increase_raw_tx_count();
-                    }
-                    false => {
-                        order = block_transaction_pool.get_order();
-                        block_transaction_pool.increase_raw_tx_count();
-                    }
-                }
+                let order = target_block_transaction_pool.increase_raw_tx_count();
 
                 submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
             }
@@ -523,7 +512,7 @@ where
     ) -> RpcResult<EncryptedInvokeTransactionResult> {
         let base = 10; // Expression base (e.g. 10 == decimal / 16 == hex)
         let lambda = 2048; // N's bits (ex. RSA-2048 => lambda = 2048)
-        let vdf: VDF = VDF::new(lambda, base);
+        let vdf: Vdf = Vdf::new(lambda, base);
 
         let param = vdf.setup(t); // Generate parameters (it returns value as json string)
         let params: ReturnData = serde_json::from_str(param.as_str())?; // Parsing parameters
