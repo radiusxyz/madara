@@ -29,7 +29,6 @@ pub mod error;
 mod graph;
 mod metrics;
 mod revalidation;
-pub mod vdf;
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -42,7 +41,7 @@ use futures::future::{self, ready};
 use futures::prelude::*;
 pub use graph::base_pool::Limit as PoolLimit;
 pub use graph::{
-    BlockTransactionPool, ChainApi, EncryptedPool, ExtrinsicHash, IsValidator, Options, Pool, Transaction,
+    ChainApi, EncryptedMemPool, EncryptedTransactionBlock, ExtrinsicHash, IsValidator, Options, Pool, Transaction,
     ValidatedTransaction,
 };
 use parking_lot::Mutex;
@@ -268,7 +267,7 @@ pub trait EncryptedTransactionPool: TransactionPool {
     ) -> PoolFuture<TxHashResults<Self, Self::Error>, Self::Error>;
 
     /// encrypted_pool
-    fn encrypted_pool(&self) -> Arc<TokioMutex<EncryptedPool>>;
+    fn encrypted_pool(&self) -> Arc<TokioMutex<EncryptedMemPool>>;
 }
 
 impl<PoolApi, Block> EncryptedTransactionPool for BasicPool<PoolApi, Block>
@@ -304,7 +303,7 @@ where
         async move { pool.submit_at(at, source, xts, order).await }.boxed()
     }
 
-    fn encrypted_pool(&self) -> Arc<TokioMutex<EncryptedPool>> {
+    fn encrypted_pool(&self) -> Arc<TokioMutex<EncryptedMemPool>> {
         self.pool().encrypted_pool()
     }
 }

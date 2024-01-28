@@ -34,7 +34,7 @@ use tokio::sync::Mutex;
 
 use super::validated_pool::{IsValidator, ValidatedPool, ValidatedTransaction};
 use super::watcher::Watcher;
-use super::{base_pool as base, EncryptedPool};
+use super::{base_pool as base, EncryptedMemPool};
 use crate::LOG_TARGET;
 
 /// Modification notification event stream type;
@@ -166,7 +166,7 @@ enum CheckBannedBeforeVerify {
 /// Extrinsics pool that performs validation.
 pub struct Pool<B: ChainApi> {
     validated_pool: Arc<ValidatedPool<B>>,
-    encrypted_pool: Arc<Mutex<EncryptedPool>>,
+    encrypted_pool: Arc<Mutex<EncryptedMemPool>>,
 }
 
 impl<B: ChainApi> Pool<B> {
@@ -180,7 +180,7 @@ impl<B: ChainApi> Pool<B> {
     ) -> Self {
         Self {
             validated_pool: Arc::new(ValidatedPool::new(options, is_validator, api)),
-            encrypted_pool: Arc::new(Mutex::new(EncryptedPool::new(encrypted_mempool, using_external_decryptor))),
+            encrypted_pool: Arc::new(Mutex::new(EncryptedMemPool::new(encrypted_mempool, using_external_decryptor))),
         }
     }
 
@@ -456,7 +456,7 @@ impl<B: ChainApi> Pool<B> {
     }
 
     /// get encrypted pool
-    pub fn encrypted_pool(&self) -> Arc<Mutex<EncryptedPool>> {
+    pub fn encrypted_pool(&self) -> Arc<Mutex<EncryptedMemPool>> {
         self.encrypted_pool.clone()
     }
 }

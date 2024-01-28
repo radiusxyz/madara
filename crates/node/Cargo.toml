@@ -30,7 +30,6 @@ md5 = { workspace = true }
 serde = { workspace = true }
 
 frame-system = { workspace = true }
-sc-basic-authorship = { workspace = true }
 sc-cli = { workspace = true }
 sc-client-api = { workspace = true }
 sc-consensus = { workspace = true }

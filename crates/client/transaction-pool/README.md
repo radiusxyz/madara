@@ -2,6 +2,87 @@ Substrate transaction pool implementation.
 
 License: GPL-3.0-or-later WITH Classpath-exception-2.0
 
+## Polkadot SDK Update: Enhanced Transaction Ordering
+### Overview
+This document describes the recent updates made to the Substrate transaction pool implementation within our Polkadot SDK. We have reintegrated a previously removed implementation of the duplicated transaction pool to accommodate a new feature - transaction ordering based on an order parameter.
+
+### Background
+Removal of Duplicated Transaction Pool
+As part of our efforts to streamline and optimize our codebase, we had previously removed duplicated code from the Polkadot SDK, specifically in the transaction pool implementation. This change was detailed in PR [#1268](https://github.com/keep-starknet-strange/madara/pull/1268).
+
+### Need for Reintroduction
+To enhance our transaction handling capabilities, specifically to introduce transaction ordering functionality, we recognized the need to reintegrate certain aspects of the previously removed transaction pool code. This reintroduction was crucial to support the new order parameter in the import function of the transaction pool.
+
+### New Feature: Transaction Ordering with order Parameter
+We have modified the import function of the transaction pool to include an additional parameter, order. This feature allows for more nuanced control over the transaction processing order, enhancing the efficiency and effectiveness of block creation and transaction handling.
+
+### Implementation Details
+Reintroduction of Code
+The reintroduction involved selectively merging relevant parts of the previously removed transaction pool code from the Polkadot SDK. This selective integration was crucial to ensure the reintroduced code supported the new order parameter without reintroducing unnecessary redundancies.
+
+### Modification of import Function
+The import function now includes an order parameter, which allows transactions to be prioritized and ordered based on custom logic defined by the block author or transaction pool manager. This parameter provides enhanced flexibility in transaction handling, especially in scenarios where transaction ordering is critical.
+
+```rust
+pub async fn submit_extrinsic_with_order<P, B>(
+    pool: Arc<P>,
+    best_block_hash: <B as BlockT>::Hash,
+    extrinsic: <B as BlockT>::Extrinsic,
+    order: u64,
+) -> Result<<P as TransactionPool>::Hash, StarknetRpcApiError>;
+
+pub fn import(&mut self, tx: Transaction<Hash, Ex>, order: Option<u64>) -> error::Result<Imported<Hash, Ex>>;
+
+fn submit_at_with_order(
+    &self,
+    at: <Self::Block as BlockT>::Hash,
+    source: TransactionSource,
+    xts: Vec<TransactionFor<Self>>,
+    order: Option<u64>,
+) -> PoolFuture<TxHashResults<Self, Self::Error>, Self::Error>;
+
+fn submit_at_with_order(
+    &self,
+    at: <Self::Block as BlockT>::Hash,
+    source: TransactionSource,
+    xts: Vec<TransactionFor<Self>>,
+    order: Option<u64>,
+) -> PoolFuture<TxHashResults<Self, Self::Error>, Self::Error>;
+
+fn import_to_ready(
+    &mut self,
+    tx: WaitingTransaction<Hash, Ex>,
+    order: Option<u64>,
+) -> error::Result<Imported<Hash, Ex>>;
+
+pub async fn submit_at(
+    &self,
+    at: <B::Block as BlockT>::Hash,
+    source: TransactionSource,
+    xts: impl IntoIterator<Item = ExtrinsicFor<B>>,
+    order: Option<u64>,
+) -> Result<Vec<Result<ExtrinsicHash<B>, B::Error>>, B::Error>;
+
+pub async fn submit_one(
+    &self,
+    at: <B::Block as BlockT>::Hash,
+    source: TransactionSource,
+    xt: ExtrinsicFor<B>,
+    order: Option<u64>,
+) -> Result<ExtrinsicHash<B>, B::Error>;
+
+pub fn import(
+    &mut self,
+    tx: WaitingTransaction<Hash, Ex>,
+    order: Option<u64>,
+) -> error::Result<Vec<Arc<Transaction<Hash, Ex>>>>;
+
+fn submit_one(&self, tx: ValidatedTransactionFor<B>, order: Option<u64>) -> Result<ExtrinsicHash<B>, B::Error>;
+
+fn submit_one(&self, tx: ValidatedTransactionFor<B>, order: Option<u64>) -> Result<ExtrinsicHash<B>, B::Error>;
+
+```
+
 # Problem Statement
 
 The transaction pool is responsible for maintaining a set of transactions that

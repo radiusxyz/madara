@@ -6637,7 +6637,6 @@ dependencies = [
  "pallet-starknet-runtime-api",
  "parking_lot 0.12.1",
  "reqwest",
- "sc-basic-authorship",
  "sc-cli",
  "sc-client-api",
  "sc-consensus",
@@ -6931,6 +6930,7 @@ dependencies = [
  "mc-storage",
  "mc-transaction-pool",
  "mp-block",
+ "mp-crypto",
  "mp-felt",
  "mp-hashers",
  "mp-transactions",
@@ -7044,12 +7044,12 @@ dependencies = [
  "encryptor",
  "futures",
  "futures-timer",
- "gmp-mpfr-sys",
  "jsonrpsee 0.20.3",
  "linked-hash-map",
  "log",
  "mc-config",
  "mc-sync-block",
+ "mp-crypto",
  "mp-transactions",
  "num-traits 0.2.17",
  "parity-scale-codec",
@@ -7309,6 +7309,15 @@ dependencies = [
  "starknet-crypto",
  "starknet-ff",
  "starknet_api",
+]
+
+[[package]]
+name = "mp-crypto"
+version = "0.6.0"
+dependencies = [
+ "gmp-mpfr-sys",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -9954,29 +9963,6 @@ dependencies = [
  "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=release-polkadot-v1.3.0)",
  "sp-wasm-interface 14.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=release-polkadot-v1.3.0)",
  "thiserror",
-]
-
-[[package]]
-name = "sc-basic-authorship"
-version = "0.10.0-dev"
-source = "git+https://github.com/paritytech/polkadot-sdk?branch=release-polkadot-v1.3.0#401f8a3e9448db854f5605b679fa085b8f445039"
-dependencies = [
- "futures",
- "futures-timer",
- "log",
- "parity-scale-codec",
- "sc-block-builder",
- "sc-client-api",
- "sc-proposer-metrics",
- "sc-telemetry",
- "sc-transaction-pool-api",
- "sp-api",
- "sp-blockchain",
- "sp-consensus",
- "sp-core 21.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=release-polkadot-v1.3.0)",
- "sp-inherents",
- "sp-runtime 24.0.0 (git+https://github.com/paritytech/polkadot-sdk?branch=release-polkadot-v1.3.0)",
- "substrate-prometheus-endpoint",
 ]
 
 [[package]]

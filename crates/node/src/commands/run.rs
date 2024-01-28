@@ -64,13 +64,6 @@ pub struct ExtendedRunCmd {
     pub cache: bool,
 }
 
-#[derive(Debug)]
-pub struct ExtendedConfiguration {
-    pub sealing: Option<Sealing>,
-    pub encrypted_mempool: bool,
-    pub using_external_decryptor: bool,
-}
-
 impl ExtendedRunCmd {
     pub fn base_path(&self) -> Result<BasePath> {
         Ok(self

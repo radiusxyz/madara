@@ -382,6 +382,27 @@ where
         deadline: time::Instant,
         block_size_limit: Option<usize>,
     ) -> Result<EndProposingReason, sp_blockchain::Error> {
+        // Encrypted Transaction Pool Check and Initialization
+        // This block of code is responsible for handling the encrypted transaction pool. It performs
+        // several key operations:
+        // 1. Checking if an encrypted transaction pool is being used. If not, it sets default values
+        //    indicating that no encrypted pool is in use.
+        // 2. If an encrypted pool is being used, it proceeds with further setup: a. Determines whether an
+        //    external decryptor is being utilized for the transactions. b. Calculates the block height and
+        //    initializes the transaction pool for that specific block. c. Checks whether the transaction
+        //    pool for the block is already closed.
+        // 3. Retrieves and logs relevant information about the transaction pool's status, such as the
+        //    current order of transactions, the total number of transactions, the number of submitted and
+        //    ready transactions.
+        // 4. Determines the length of encrypted transactions to be processed, and closes the pool for the
+        //    current block height if it is not already closed.
+        //
+        // The outcome of this block is a tuple containing:
+        // - is_using_encrypted_pool: A boolean indicating if an encrypted pool is in use.
+        // - using_external_decryptor: A boolean indicating if an external decryptor is being used.
+        // - encrypted_txs_len: The length of encrypted transactions in the pool.
+        // - block_tx_pool_is_closed: A boolean indicating if the transaction pool for the block is closed.
+        //
         let (is_using_encrypted_pool, using_external_decryptor, encrypted_txs_len, block_tx_pool_is_closed) = {
             let encrypted_pool = self.transaction_pool.encrypted_pool().clone();
             let mut locked_encrypted_pool = encrypted_pool.lock().await;
@@ -424,14 +445,29 @@ where
             }
         };
 
+        // Processing of Encrypted Transactions
+        // This section of the code is executed if an encrypted transaction pool is being used and the
+        // transaction pool for the block is not closed. It performs the following operations:
+        // 1. Captures the current system time to log the start time of the decryption process.
+        // 2. Iterates through each encrypted transaction in the pool based on the number of encrypted
+        //    transactions.
+        // 3. For each transaction, it calls a function to decrypt and submit the transaction to the block.
+        //    The decision to use an external decryptor is also considered in this step.
+        //
+        // - If the encrypted transaction pool is in use (`is_using_encrypted_pool` is true) and the
+        //   transaction pool for the block is not closed (`block_tx_pool_is_closed` is false), then: a. The
+        //   current system time is recorded. b. The decryption process starts, and each transaction is
+        //   decrypted and submitted in sequence.
         if is_using_encrypted_pool && !block_tx_pool_is_closed {
+            // Records the start time of the decryption process
             let start = std::time::SystemTime::now();
             let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
             log::info!("Decrypt Start in {:?}", since_the_epoch);
 
-            for order in 0..encrypted_txs_len {
+            // Iterates through each encrypted transaction and processes them
+            (0..encrypted_txs_len).for_each(|order| {
                 self.decrypt_and_submit_transaction(order, using_external_decryptor);
-            }
+            });
         }
 
         // proceed with transactions
@@ -638,12 +674,12 @@ where
                     encrypted_invoke_transaction = match block_transaction_pool.get_encrypted_invoke_tx(order) {
                         Ok(encrypted_tx) => encrypted_tx.clone(),
                         Err(e) => {
-                            log::error!("Failed to get encrypted_invoke_transaction: {}", e);
+                            log::error!("Failed to get encrypted_invoke_transaction: {e}");
                             return;
                         }
                     }
                 } else {
-                    log::error!("Something wrong. Not exist block_height: {}", block_height);
+                    log::error!("Something wrong. Not exist block_height: {block_height}");
                     return;
                 };
 
@@ -681,11 +717,11 @@ where
                 let since_the_epoch = match end.duration_since(UNIX_EPOCH) {
                     Ok(duration) => duration,
                     Err(e) => {
-                        log::error!("System time error: {:?}", e);
+                        log::error!("System time error: {e:?}");
                         return;
                     }
                 };
-                log::info!("Decrypt {} End in {:?}", order, since_the_epoch);
+                log::info!("Decrypt {order} End in {since_the_epoch:?}");
 
                 let transaction: UserTransaction = UserTransaction::Invoke(invoke_tx.clone());
 
@@ -705,7 +741,7 @@ where
 
                 match submit_extrinsic_with_order(pool, best_block_hash, extrinsic, order).await {
                     Ok(_hash) => log::info!("Successfully submitted extrinsic"),
-                    Err(e) => log::error!("Failed to submit extrinsic: {}", e),
+                    Err(e) => log::error!("Failed to submit extrinsic: {e:?}"),
                 }
             }),
         )

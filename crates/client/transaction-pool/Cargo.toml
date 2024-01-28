@@ -42,6 +42,7 @@ starknet-crypto = { workspace = true, default-features = false, features = [
 tokio = { workspace = true }
 mc-config = { workspace = true }
 mc-sync-block = { workspace = true }
+sp-consensus = { workspace = true }
 mp-transactions = { workspace = true, features = ["serde"] }
 bincode = { workspace = true }
 jsonrpsee = { version = "0.20", features = [
@@ -53,7 +54,7 @@ jsonrpsee = { version = "0.20", features = [
 ] }
 
 # for decryptor and encryptor
-gmp-mpfr-sys = { version = "1.4.7" }
+mp-crypto = { workspace = true }
 encryptor = { git = "https://github.com/radiusxyz/encryptor" }
 
 [dev-dependencies]
@@ -61,4 +62,3 @@ substrate-test-runtime = { git = "https://github.com/paritytech/polkadot-sdk", b
 substrate-test-runtime-client = { workspace = true }
 substrate-test-runtime-transaction-pool = { git = "https://github.com/paritytech/polkadot-sdk", branch = "release-polkadot-v1.3.0" }
 sc-block-builder = { workspace = true }
-sp-consensus = { workspace = true }
