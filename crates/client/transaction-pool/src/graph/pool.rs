@@ -166,7 +166,7 @@ enum CheckBannedBeforeVerify {
 /// Extrinsics pool that performs validation.
 pub struct Pool<B: ChainApi> {
     validated_pool: Arc<ValidatedPool<B>>,
-    encrypted_pool: Arc<Mutex<EncryptedMemPool>>,
+    encrypted_mempool: Arc<Mutex<EncryptedMemPool>>,
 }
 
 impl<B: ChainApi> Pool<B> {
@@ -180,7 +180,7 @@ impl<B: ChainApi> Pool<B> {
     ) -> Self {
         Self {
             validated_pool: Arc::new(ValidatedPool::new(options, is_validator, api)),
-            encrypted_pool: Arc::new(Mutex::new(EncryptedMemPool::new(encrypted_mempool, using_external_decryptor))),
+            encrypted_mempool: Arc::new(Mutex::new(EncryptedMemPool::new(encrypted_mempool, using_external_decryptor))),
         }
     }
 
@@ -456,13 +456,13 @@ impl<B: ChainApi> Pool<B> {
     }
 
     /// get encrypted pool
-    pub fn encrypted_pool(&self) -> Arc<Mutex<EncryptedMemPool>> {
-        self.encrypted_pool.clone()
+    pub fn encrypted_mempool(&self) -> Arc<Mutex<EncryptedMemPool>> {
+        self.encrypted_mempool.clone()
     }
 }
 
 impl<B: ChainApi> Clone for Pool<B> {
     fn clone(&self) -> Self {
-        Self { validated_pool: self.validated_pool.clone(), encrypted_pool: self.encrypted_pool.clone() }
+        Self { validated_pool: self.validated_pool.clone(), encrypted_mempool: self.encrypted_mempool.clone() }
     }
 }

@@ -34,7 +34,7 @@ use log::{debug, error, info, trace, warn};
 use mc_rpc::submit_extrinsic_with_order;
 use mc_transaction_pool::decryptor::Decryptor;
 use mc_transaction_pool::EncryptedTransactionPool;
-use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction, UserTransaction};
+use mp_transactions::{InvokeTransaction, UserTransaction};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use prometheus_endpoint::Registry as PrometheusRegistry;
 use sc_block_builder::{BlockBuilderApi, BlockBuilderProvider};
@@ -387,10 +387,10 @@ where
         // several key operations:
         // 1. Checking if an encrypted transaction pool is being used. If not, it sets default values
         //    indicating that no encrypted pool is in use.
-        // 2. If an encrypted pool is being used, it proceeds with further setup: a. Determines whether an
-        //    external decryptor is being utilized for the transactions. b. Calculates the block height and
-        //    initializes the transaction pool for that specific block. c. Checks whether the transaction
-        //    pool for the block is already closed.
+        // 2. If an encrypted mempool is being used, it proceeds with further setup: a. Determines whether
+        //    an external decryptor is being utilized for the transactions. b. Calculates the block height
+        //    and initializes the transaction pool for that specific block. c. Checks whether the
+        //    transaction pool for the block is already closed.
         // 3. Retrieves and logs relevant information about the transaction pool's status, such as the
         //    current order of transactions, the total number of transactions, the number of submitted and
         //    ready transactions.
@@ -398,32 +398,39 @@ where
         //    current block height if it is not already closed.
         //
         // The outcome of this block is a tuple containing:
-        // - is_using_encrypted_pool: A boolean indicating if an encrypted pool is in use.
+        // - is_using_encrypted_mempool: A boolean indicating if an encrypted pool is in use.
         // - using_external_decryptor: A boolean indicating if an external decryptor is being used.
         // - encrypted_txs_len: The length of encrypted transactions in the pool.
         // - block_tx_pool_is_closed: A boolean indicating if the transaction pool for the block is closed.
         //
-        let (is_using_encrypted_pool, using_external_decryptor, encrypted_txs_len, block_tx_pool_is_closed) = {
-            let encrypted_pool = self.transaction_pool.encrypted_pool().clone();
-            let mut locked_encrypted_pool = encrypted_pool.lock().await;
-            let is_using_encrypted_pool = locked_encrypted_pool.is_using_encrypted_pool();
+        let (
+            is_using_encrypted_mempool,
+            using_external_decryptor,
+            encrypted_transaction_pool_orders,
+            is_closed_block_encrypted_transaction_pool,
+        ) = {
+            let encrypted_mempool = self.transaction_pool.encrypted_mempool().clone();
+            let mut locked_encrypted_mempool = encrypted_mempool.lock().await;
+            let is_using_encrypted_mempool = locked_encrypted_mempool.is_using_encrypted_mempool();
+            let mut encrypted_transaction_pool_orders = vec![];
 
-            if !is_using_encrypted_pool {
-                (is_using_encrypted_pool, false, 0, true)
+            if !is_using_encrypted_mempool {
+                (is_using_encrypted_mempool, false, encrypted_transaction_pool_orders, true)
             } else {
-                let using_external_decryptor = locked_encrypted_pool.is_using_external_decryptor();
+                let is_using_external_decryptor = locked_encrypted_mempool.is_using_external_decryptor();
                 let block_height = self.parent_number.to_string().parse::<u64>().map_err(|e| {
                     sp_blockchain::Error::Application(Box::new(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
                         format!("Failed to parse block height: {e}"),
                     )))
                 })? + 1;
-                let block_tx_pool = locked_encrypted_pool.get_or_init_block_tx_pool(block_height);
-                let block_tx_pool_is_closed = block_tx_pool.is_closed();
+                let block_encrypted_transaction_pool =
+                    locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(block_height);
+                let is_closed_block_encrypted_transaction_pool = block_encrypted_transaction_pool.is_closed();
 
-                let order = block_tx_pool.get_order();
-                let tx_cnt = block_tx_pool.get_tx_cnt();
-                let dec_cnt = block_tx_pool.get_submitted_tx_count();
+                let order = block_encrypted_transaction_pool.get_order();
+                let tx_cnt = block_encrypted_transaction_pool.get_tx_cnt();
+                let dec_cnt = block_encrypted_transaction_pool.get_submitted_tx_count();
                 let ready_cnt = self.transaction_pool.status().ready as u64;
                 log::info!(
                     "block height: {}, current order: {}, (tx count:submitted tx count:ready count) = ({}:{}:{})",
@@ -434,14 +441,22 @@ where
                     ready_cnt
                 );
 
-                let encrypted_txs_len = if !block_tx_pool_is_closed {
-                    locked_encrypted_pool.close(block_height).unwrap();
-                    locked_encrypted_pool.get_block_tx_pool(&block_height).unwrap().encrypted_txs_len() as u64
-                } else {
-                    0
-                };
+                if !is_closed_block_encrypted_transaction_pool {
+                    locked_encrypted_mempool.close(block_height).unwrap();
+                    encrypted_transaction_pool_orders = locked_encrypted_mempool
+                        .get_block_encrypted_transaction_pool(&block_height)
+                        .unwrap()
+                        .encrypted_transaction_pool_orders()
+                        .cloned()
+                        .collect::<Vec<u64>>();
+                }
 
-                (is_using_encrypted_pool, using_external_decryptor, encrypted_txs_len, block_tx_pool_is_closed)
+                (
+                    is_using_encrypted_mempool,
+                    is_using_external_decryptor,
+                    encrypted_transaction_pool_orders,
+                    is_closed_block_encrypted_transaction_pool,
+                )
             }
         };
 
@@ -454,18 +469,18 @@ where
         // 3. For each transaction, it calls a function to decrypt and submit the transaction to the block.
         //    The decision to use an external decryptor is also considered in this step.
         //
-        // - If the encrypted transaction pool is in use (`is_using_encrypted_pool` is true) and the
+        // - If the encrypted transaction pool is in use (`is_using_encrypted_mempool` is true) and the
         //   transaction pool for the block is not closed (`block_tx_pool_is_closed` is false), then: a. The
         //   current system time is recorded. b. The decryption process starts, and each transaction is
         //   decrypted and submitted in sequence.
-        if is_using_encrypted_pool && !block_tx_pool_is_closed {
+        if is_using_encrypted_mempool && !is_closed_block_encrypted_transaction_pool {
             // Records the start time of the decryption process
             let start = std::time::SystemTime::now();
             let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
             log::info!("Decrypt Start in {:?}", since_the_epoch);
 
             // Iterates through each encrypted transaction and processes them
-            (0..encrypted_txs_len).for_each(|order| {
+            encrypted_transaction_pool_orders.iter().for_each(|&order| {
                 self.decrypt_and_submit_transaction(order, using_external_decryptor);
             });
         }
@@ -656,47 +671,50 @@ where
         let client = self.client.clone();
         let pool = self.transaction_pool.clone();
 
-        let encrypted_mempool = self.transaction_pool.encrypted_pool();
+        let encrypted_mempool = self.transaction_pool.encrypted_mempool();
         self.spawn_handle.spawn_blocking(
             "Decryptor",
             None,
             Box::pin(async move {
                 tokio::time::sleep(Duration::from_secs(1)).await;
 
-                let encrypted_invoke_transaction: EncryptedInvokeTransaction;
-                if let Some(block_transaction_pool) = encrypted_mempool.lock().await.get_block_tx_pool(&block_height) {
-                    if block_transaction_pool.is_key_received(order) {
-                        info!("Received key! No need for decrypt.");
+                let (encrypted_invoke_transaction, decryption_key) = {
+                    let locked_encrypted_mempool = encrypted_mempool.lock().await;
+                    let Some(encrypted_transaction_block) =
+                        locked_encrypted_mempool.get_block_encrypted_transaction_pool(&block_height)
+                    else {
+                        log::error!("Something wrong. Not exist block_height: {block_height}");
                         return;
-                    }
-                    log::info!("Not received key. Encrypted tx is required to proceed.");
+                    };
 
-                    encrypted_invoke_transaction = match block_transaction_pool.get_encrypted_invoke_tx(order) {
+                    let tx = match encrypted_transaction_block.get_encrypted_invoke_tx(order) {
                         Ok(encrypted_tx) => encrypted_tx.clone(),
                         Err(e) => {
                             log::error!("Failed to get encrypted_invoke_transaction: {e}");
                             return;
                         }
-                    }
-                } else {
-                    log::error!("Something wrong. Not exist block_height: {block_height}");
-                    return;
+                    };
+
+                    (tx, encrypted_transaction_block.get_decryption_key(order).cloned())
                 };
 
                 let decryptor = Decryptor::default();
                 let invoke_tx_result: Result<InvokeTransaction, _> = if using_external_decryptor {
                     decryptor.delegate_to_decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction).await
                 } else {
-                    decryptor.decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, None).await
+                    decryptor.decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, decryption_key).await
                 };
 
                 let invoke_tx = match invoke_tx_result {
                     Ok(tx) => tx,
                     Err(e) => {
+                        // Should conduct an integrity check in advance to avoid wasting resources on decrypting invalid
+                        // transactions.
                         log::error!("Error while decrypting transaction: {e}");
                         let mut locked_encrypted_mempool = encrypted_mempool.lock().await;
-                        let block_tx_pool = locked_encrypted_mempool.get_mut_block_tx_pool(&block_height).unwrap();
-                        block_tx_pool.delete_invalid_encrypted_tx(order);
+                        let encrypted_transaction_block =
+                            locked_encrypted_mempool.get_mut_block_encrypted_transaction_pool(&block_height).unwrap();
+                        encrypted_transaction_block.delete_invalid_encrypted_tx(order);
 
                         return;
                     }
@@ -704,13 +722,10 @@ where
 
                 {
                     let mut locked_encrypted_mempool = encrypted_mempool.lock().await;
-                    let block_tx_pool = locked_encrypted_mempool.get_mut_block_tx_pool(&block_height).unwrap();
-                    if block_tx_pool.is_key_received(order) {
-                        log::info!("Received key!");
-                        return;
-                    }
+                    let encrypted_transaction_block =
+                        locked_encrypted_mempool.get_mut_block_encrypted_transaction_pool(&block_height).unwrap();
 
-                    block_tx_pool.increase_decrypted_tx_count();
+                    encrypted_transaction_block.increase_decrypted_tx_count();
                 }
 
                 let end = std::time::SystemTime::now();

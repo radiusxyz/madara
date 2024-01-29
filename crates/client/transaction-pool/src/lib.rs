@@ -41,7 +41,7 @@ use futures::future::{self, ready};
 use futures::prelude::*;
 pub use graph::base_pool::Limit as PoolLimit;
 pub use graph::{
-    ChainApi, EncryptedMemPool, EncryptedTransactionBlock, ExtrinsicHash, IsValidator, Options, Pool, Transaction,
+    BlockEncryptedTransactionPool, ChainApi, EncryptedMemPool, ExtrinsicHash, IsValidator, Options, Pool, Transaction,
     ValidatedTransaction,
 };
 use parking_lot::Mutex;
@@ -266,8 +266,8 @@ pub trait EncryptedTransactionPool: TransactionPool {
         order: Option<u64>,
     ) -> PoolFuture<TxHashResults<Self, Self::Error>, Self::Error>;
 
-    /// encrypted_pool
-    fn encrypted_pool(&self) -> Arc<TokioMutex<EncryptedMemPool>>;
+    /// encrypted_mempool
+    fn encrypted_mempool(&self) -> Arc<TokioMutex<EncryptedMemPool>>;
 }
 
 impl<PoolApi, Block> EncryptedTransactionPool for BasicPool<PoolApi, Block>
@@ -303,8 +303,8 @@ where
         async move { pool.submit_at(at, source, xts, order).await }.boxed()
     }
 
-    fn encrypted_pool(&self) -> Arc<TokioMutex<EncryptedMemPool>> {
-        self.pool().encrypted_pool()
+    fn encrypted_mempool(&self) -> Arc<TokioMutex<EncryptedMemPool>> {
+        self.pool().encrypted_mempool()
     }
 }
 
