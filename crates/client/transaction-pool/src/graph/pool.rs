@@ -219,10 +219,8 @@ impl<B: ChainApi> Pool<B> {
         xt: ExtrinsicFor<B>,
         order: Option<u64>,
     ) -> Result<ExtrinsicHash<B>, B::Error> {
-        self.submit_at(at, source, std::iter::once(xt), order).await?.pop().ok_or({
-            log::error!("One extrinsic passed; one result returned; qed");
-            error::Error::Unactionable
-        })?
+        let res = self.submit_at(at, source, std::iter::once(xt), order).await?.pop();
+        res.expect("One extrinsic passed; one result returned; qed")
     }
 
     /// Import a single extrinsic and starts to watch its progress in the pool.

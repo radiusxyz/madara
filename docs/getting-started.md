@@ -71,6 +71,29 @@ For example:
 RUSTLOG=runtime=info cargo run --release -- --dev
 ```
 
+### Encrypted Mempool (additional feature)
+
+Madara now includes an encrypted mempool feature, enhancing the privacy and security of transaction handling. This feature allows transactions to be encrypted before being added to the block, providing an additional layer of security.
+
+#### Key Features
+
+- Encrypt Transactions: Encrypts raw transactions before they are broadcasted.
+- Decrypt and Process: Decrypts encrypted transactions and processes them for block inclusion.
+- Maintain Transaction Order: Ensures the order of transactions is maintained during encryption and decryption.
+
+#### Running Madara with Encrypted Mempool
+
+To use the encrypted mempool feature, you need to start Madara with the `--encrypted-mempool` flag.
+This activates the encrypted mempool functionality, allowing the node to handle encrypted transactions.
+
+```sh
+# Start the node in development mode with encrypted mempool
+cargo run --release -- --dev --encrypted-mempool
+```
+
+When running with this flag, Madara will process transactions through the encrypted mempool,
+ensuring that they are encrypted and decrypted as required.
+
 ### Using Nix (optional, only for degens)
 
 Install [nix](https://nixos.org/) and optionally
