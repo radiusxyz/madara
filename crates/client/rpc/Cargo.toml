@@ -16,7 +16,6 @@ repository = "https://github.com/keep-starknet-strange/madara"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
-parking_lot = { workspace = true }
 # Madara utils
 mc-genesis-data-provider = { workspace = true }
 # Madara runtime
@@ -36,7 +35,6 @@ sp-api = { workspace = true, default-features = true }
 sp-arithmetic = { workspace = true, default-features = true }
 sp-blockchain = { workspace = true, default-features = true }
 sp-core = { workspace = true, default-features = true }
-sp-io = { workspace = true, default-features = true }
 sp-runtime = { workspace = true, default-features = true }
 # Substrate client
 sc-client-api = { workspace = true, default-features = true }
@@ -68,10 +66,11 @@ starknet-crypto = { workspace = true, default-features = false, features = [
   "alloc",
 ] }
 dotenv = { workspace = true }
-num-bigint = { workspace = true, default-features = false }
-rand = "0.8"
 mc-config = { workspace = true }
 tokio = { workspace = true, default-features = true, features = ["time"] }
+# Encrypted mempool
+rand = "0.8"
+num-bigint = { workspace = true, default-features = false }
 encryptor = { git = "https://github.com/radiusxyz/encryptor" }
 
 [dev-dependencies]

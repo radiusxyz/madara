@@ -20,12 +20,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 name = "madara"
 
 [dependencies]
-parking_lot = { workspace = true }
-async-trait = { workspace = true }
-tokio = { workspace = true }
 # Ethereum
 ethers = { workspace = true, features = ["openssl"] }
 
+async-trait = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 futures = { workspace = true, features = ["thread-pool"] }
 log = { workspace = true }
