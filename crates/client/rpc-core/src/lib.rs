@@ -15,7 +15,9 @@ use serde_with::serde_as;
 
 pub mod utils;
 
+use mp_simulations::{SimulatedTransaction, SimulationFlag};
 use mp_transactions::TransactionStatus;
+use pallet_starknet::genesis_loader::PredeployedAccount;
 use starknet_core::serde::unsigned_field_element::UfeHex;
 use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
@@ -33,6 +35,19 @@ use crate::types::{
 #[serde_as]
 #[derive(Serialize, Deserialize)]
 pub struct Felt(#[serde_as(as = "UfeHex")] pub FieldElement);
+
+#[derive(Serialize, Deserialize)]
+pub struct PredeployedAccountWithBalance {
+    pub account: PredeployedAccount,
+    pub balance: FieldElement,
+}
+
+/// Madara rpc interface for additional features.
+#[rpc(server, namespace = "madara")]
+pub trait MadaraRpcApi: StarknetReadRpcApi {
+    #[method(name = "predeployedAccounts")]
+    fn predeployed_accounts(&self) -> RpcResult<Vec<PredeployedAccountWithBalance>>;
+}
 
 /// Starknet write rpc interface.
 #[rpc(server, namespace = "starknet")]
@@ -87,7 +102,7 @@ pub trait StarknetWriteRpcApi {
     async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResult>;
 }
 
-/// Starknet rpc interface.
+/// Starknet read rpc interface.
 #[rpc(server, namespace = "starknet")]
 pub trait StarknetReadRpcApi {
     /// Get the Version of the StarkNet JSON-RPC Specification Being Used
@@ -181,4 +196,17 @@ pub trait StarknetReadRpcApi {
         &self,
         transaction_hash: FieldElement,
     ) -> RpcResult<MaybePendingTransactionReceipt>;
+}
+
+/// Starknet trace rpc interface.
+#[rpc(server, namespace = "starknet")]
+pub trait StarknetTraceRpcApi {
+    /// Returns the execution trace of a transaction by simulating it in the runtime.
+    #[method(name = "simulateTransactions")]
+    async fn simulate_transactions(
+        &self,
+        block_id: BlockId,
+        transactions: Vec<BroadcastedTransaction>,
+        simulation_flags: Vec<SimulationFlag>,
+    ) -> RpcResult<Vec<SimulatedTransaction>>;
 }

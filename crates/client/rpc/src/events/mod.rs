@@ -7,7 +7,7 @@ use std::vec::IntoIter;
 use jsonrpsee::core::RpcResult;
 use log::error;
 use mc_rpc_core::utils::get_block_by_block_hash;
-use mc_transaction_pool::ChainApi as McChainApi;
+use mc_transaction_pool::ChainApi;
 use mp_felt::Felt252Wrapper;
 use mp_hashers::HasherT;
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
@@ -23,7 +23,8 @@ use crate::errors::StarknetRpcApiError;
 use crate::types::{ContinuationToken, RpcEventFilter};
 use crate::Starknet;
 
-impl<A: McChainApi, B, BE, C, P, H> Starknet<A, B, BE, C, P, H>
+// todo(jaemin): G?
+impl<A: ChainApi, B, BE, G, C, P, H> Starknet<A, B, BE, G, C, P, H>
 where
     B: BlockT,
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
