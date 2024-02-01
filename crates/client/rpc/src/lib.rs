@@ -558,7 +558,8 @@ where
                 let best_block_hash = self.client.info().best_hash;
                 let transaction: UserTransaction = UserTransaction::Invoke(invoke_tx.clone());
 
-                let extrinsic = convert_transaction(self.client.clone(), best_block_hash, transaction.clone()).await?;
+                let extrinsic =
+                    convert_tx_to_extrinsic(self.client.clone(), best_block_hash, transaction.clone()).await?;
                 submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, decryption_info.order)
                     .await?;
 

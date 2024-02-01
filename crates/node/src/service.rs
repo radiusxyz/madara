@@ -12,7 +12,7 @@ use futures::prelude::*;
 use madara_runtime::opaque::Block;
 use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_block_proposer::ProposerFactory;
-use mc_commitment_state_diff::{log_commitment_state_diff, CommitmentStateDiffWorker};
+use mc_commitment_state_diff::CommitmentStateDiffWorker;
 use mc_config::config_map;
 use mc_data_availability::avail::config::AvailConfig;
 use mc_data_availability::avail::AvailClient;

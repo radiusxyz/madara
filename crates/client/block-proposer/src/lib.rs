@@ -740,18 +740,10 @@ where
 
                 let transaction: UserTransaction = UserTransaction::Invoke(invoke_tx.clone());
 
-                let extrinsic = match client.runtime_api().convert_transaction(best_block_hash, transaction.clone()) {
-                    Ok(ext_res) => match ext_res {
-                        Ok(ext) => ext,
-                        Err(e) => {
-                            log::error!("Failed to convert transaction: {e:?}");
-                            return;
-                        }
-                    },
-                    Err(e) => {
-                        log::error!("Failed to convert transaction: {e}");
-                        return;
-                    }
+                let Ok(extrinsic) = client.runtime_api().convert_transaction(best_block_hash, transaction.clone())
+                else {
+                    log::error!("Failed to convert transaction to extrinsic.");
+                    return;
                 };
 
                 match submit_extrinsic_with_order(pool, best_block_hash, extrinsic, order).await {

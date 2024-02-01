@@ -146,7 +146,7 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
 
     let da_config: Option<(DaLayer, PathBuf)> = match cli.run.da_layer {
         Some(da_layer) => {
-            let da_conf = cli.run.da_conf.expect("clap requires da_conf when da_layer is present");
+            let da_conf = cli.run.da_conf.clone().expect("clap requires da_conf when da_layer is present");
             if !da_conf.exists() {
                 log::info!("{} does not contain DA config", da_conf.display());
                 return Err("DA config not available".into());
@@ -165,7 +165,8 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
 
     let settlement_config: Option<(SettlementLayer, PathBuf)> = match cli.run.settlement {
         Some(SettlementLayer::Ethereum) => {
-            let settlement_conf = cli.run.settlement_conf.expect("clap requires da_conf when settlement is present");
+            let settlement_conf =
+                cli.run.settlement_conf.clone().expect("clap requires da_conf when settlement is present");
             if !settlement_conf.exists() {
                 return Err(sc_cli::Error::Input(format!(
                     "Ethereum config not found at {}",
