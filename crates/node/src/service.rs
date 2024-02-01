@@ -19,8 +19,7 @@ use mc_data_availability::avail::{config::AvailConfig, AvailClient};
 #[cfg(feature = "celestia")]
 use mc_data_availability::celestia::{config::CelestiaConfig, CelestiaClient};
 use mc_data_availability::ethereum::config::EthereumConfig;
-use mc_data_availability::ethereum::EthereumClient;
-use mc_data_availability::{DaClient, DaLayer, DataAvailabilityWorker};
+use mc_data_availability::{DaClient, DataAvailabilityWorker};
 use mc_genesis_data_provider::OnDiskGenesisConfig;
 use mc_l1_messages::config::L1MessagesWorkerConfig;
 use mc_mapping_sync::MappingSyncWorker;
@@ -277,7 +276,7 @@ where
 /// - `cache`: whether more information should be cached when storing the block in the database.
 pub fn new_full(
     config: Configuration,
-    da_layer: Option<(DaLayer, PathBuf)>,
+    da_client: Option<Box<dyn DaClient + Send + Sync>>,
     cli: Cli,
     cache_more_things: bool,
     l1_messages_worker_config: Option<L1MessagesWorkerConfig>,
@@ -436,42 +435,28 @@ pub fn new_full(
     let (commitment_state_diff_tx, commitment_state_diff_rx) = mpsc::channel(5);
 
     // initialize data availability worker
-    if let Some((da_layer, da_path)) = da_layer {
+    if let Some(da_client) = da_client {
         task_manager.spawn_essential_handle().spawn(
             "commitment-state-diff",
             Some("madara"),
-            CommitmentStateDiffWorker::<_, _, StarknetHasher>::new(client.clone(), commitment_state_diff_tx)
-                .for_each(|()| future::ready(())),
+            CommitmentStateDiffWorker::<_, _, StarknetHasher>::new(
+                client.clone(),
+                madara_backend.clone(),
+                commitment_state_diff_tx,
+            )
+            .for_each(|()| future::ready(())),
         );
-
-        let da_client: Arc<dyn DaClient + Send + Sync> = match da_layer {
-            #[cfg(feature = "celestia")]
-            DaLayer::Celestia => {
-                let celestia_conf = CelestiaConfig::try_from(&da_path)?;
-                Arc::new(CelestiaClient::try_from(celestia_conf).map_err(|e| ServiceError::Other(e.to_string()))?)
-            }
-            DaLayer::Ethereum => {
-                let ethereum_conf = EthereumConfig::try_from(&da_path)?;
-                Arc::new(EthereumClient::try_from(ethereum_conf)?)
-            }
-            #[cfg(feature = "avail")]
-            DaLayer::Avail => {
-                let avail_conf = AvailConfig::try_from(&da_path)?;
-                Arc::new(AvailClient::try_from(avail_conf).map_err(|e| ServiceError::Other(e.to_string()))?)
-            }
-        };
-
         task_manager.spawn_essential_handle().spawn(
             "da-worker",
             Some(MADARA_TASK_GROUP),
             DataAvailabilityWorker::<_, StarknetHasher>::prove_current_block(
-                da_client,
+                da_client.into(),
                 prometheus_registry.clone(),
                 commitment_state_diff_rx,
                 madara_backend.clone(),
             ),
         );
-    };
+    }
 
     // initialize settlement worker
     if let Some((layer_kind, config_path)) = settlement_config {
@@ -488,7 +473,12 @@ pub fn new_full(
         task_manager.spawn_essential_handle().spawn(
             "settlement-worker-sync-state",
             Some("madara"),
-            SettlementWorker::<_, StarknetHasher, _>::sync_state(client.clone(), settlement_provider, retry_strategy),
+            SettlementWorker::<_, StarknetHasher, _>::sync_state(
+                client.clone(),
+                settlement_provider,
+                madara_backend.clone(),
+                retry_strategy,
+            ),
         );
     }
 

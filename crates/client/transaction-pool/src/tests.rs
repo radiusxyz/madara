@@ -21,9 +21,9 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use parity_scale_codec::Encode;
 use parking_lot::Mutex;
 use sc_transaction_pool_api::error;
-use scale_codec::Encode;
 use sp_blockchain::TreeRoute;
 use sp_runtime::generic::BlockId;
 use sp_runtime::traits::{Block as BlockT, Hash};

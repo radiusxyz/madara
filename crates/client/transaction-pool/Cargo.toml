@@ -25,7 +25,7 @@ sc-client-api = { workspace = true }
 sc-transaction-pool = { workspace = true }
 sc-transaction-pool-api = { workspace = true }
 sc-utils = { workspace = true }
-scale-codec = { workspace = true, default-features = true }
+parity-scale-codec = { workspace = true, default-features = true }
 serde = { workspace = true }
 sp-api = { workspace = true }
 sp-blockchain = { workspace = true }

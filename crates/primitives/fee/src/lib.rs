@@ -29,6 +29,7 @@ use starknet_api::calldata;
 use starknet_api::deprecated_contract_class::EntryPointType;
 use starknet_api::hash::StarkFelt;
 use starknet_api::transaction::{Calldata, Fee};
+use starknet_core::types::ResourcePrice as CoreResourcePrice;
 
 /// Initial gas for a transaction
 pub const INITIAL_GAS: u64 = u64::MAX;
@@ -52,6 +53,26 @@ pub const TRANSFER_SELECTOR_HASH: [u8; 32] = [
     0, 131, 175, 211, 244, 202, 237, 198, 238, 191, 68, 36, 111, 229, 78, 56, 201, 94, 49, 121, 165, 236, 158, 168, 23,
     64, 236, 165, 180, 130, 209, 46,
 ]; // starknet_keccak(TRANSFER_SELECTOR_NAME.as_bytes()).to_le_bytes();
+
+#[serde_with::serde_as]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "parity-scale-codec", derive(parity_scale_codec::Encode, parity_scale_codec::Decode))]
+#[cfg_attr(feature = "scale-info", derive(scale_info::TypeInfo))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ResourcePrice {
+    /// The price of one unit of the given resource, denominated in fri (10^-18 strk)
+    pub price_in_strk: Option<u64>,
+    /// The price of one unit of the given resource, denominated in wei
+    pub price_in_wei: u128,
+}
+
+impl From<ResourcePrice> for CoreResourcePrice {
+    fn from(item: ResourcePrice) -> Self {
+        // TODO: when we rebase starknet-rs those field type will be FieldElements
+        // Get rid of the type conversions
+        CoreResourcePrice { price_in_strk: item.price_in_strk, price_in_wei: item.price_in_wei as u64 }
+    }
+}
 
 /// Gets the transaction resources.
 pub fn compute_transaction_resources<S: State + StateChanges>(
@@ -177,7 +198,7 @@ pub fn extract_l1_gas_and_vm_usage(resources: &ResourcesMapping) -> (usize, Reso
     let l1_gas_usage =
         vm_resource_usage.remove(GAS_USAGE).expect("`ResourcesMapping` does not have the key `l1_gas_usage`.");
 
-    (l1_gas_usage, ResourcesMapping(vm_resource_usage))
+    (l1_gas_usage as usize, ResourcesMapping(vm_resource_usage))
 }
 
 /// Calculates the L1 gas consumed when submitting the underlying Cairo program to SHARP.

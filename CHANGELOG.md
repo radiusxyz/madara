@@ -2,6 +2,31 @@
 
 ## Next release
 
+- fix: cairo1 contracts should be identified by their sierra class hash
+- fix(cli): repair broken cli for da conf
+- feat(client): on `add_declare_transaction` store sierra contract classes in
+  the madara backend
+- chore: use struct error in client/db
+- fix: don't ignore Sierra to CASM mapping in genesis config
+- refacto: early exit txs fee estimation when one fails
+- dev: fix linter warning in README.md
+- fix: remove waiting loop from `getTxReceipt`
+- feat: types in `mp-transactions` impl a method to get their version
+- feat: make L1 gas price a `const` of the `RuntimeConfig`
+- fix: broken class hashes and contracts in genesis
+- refactor: rename LAST_SYNCED_L1_BLOCK to be more clear
+- chore: add headers to da calldata, fix eth da in sovereign mode
+- refacto(simulate_tx): move logic to the client
+- chore: added ca-certificate in DockerFile for SSL related issues
+- chore(primitives/commitment): remove crate
+- chore(primitives/block/header): remove starknet-trie dependent fields
+- refacto(primitives/db): add a temporary way to get a fake global state root
+- chore: feature flags for avail and celestia DA
+- feat(rpc): added support for v0.5.1 JSON-RPC specs
+- feat(rpc): added ordered messages/events in trace fields
+- feat(rpc): support for starknet.rs v0.5.1 version
+- feat(rpc): added execution resources in trace fields
+- feat(rpc): added state diff field in trace fields
 - refactor: removed benchmarking folder and traces of CI pipeline
 - fix: decouple is_query into is_query and offset_version
 - feat: add sierra to casm class hash mapping to genesis assets
@@ -37,6 +62,11 @@
 - refactor: use `map` in `estimate_fee` to stop computation on error
 - fix: `tempdir` crate has been deprecated; use `tempfile` instead
 - dev: add avail and celestia crates behind a feature flag
+- dev: replace md5 with sha3_256 hash function
+- feat: fixing getNonce Rpc Call and adding a new test
+- refactor: use Zaun crate for Starknet core contract bindings
+- refactor: use Anvil sandbox from Zaun crate
+- feat(rpc) : estimateMessageFee RPC call implementation
 
 ## v0.6.0
 
@@ -74,6 +104,7 @@
 - chore(data-availability-avail): implement fire and forget, and add ws
   reconnection logic
 - chore: update `polkadot-sdk` to `release-polkadot-v1.3.0`
+- feat: fallback default file for DA and Settlement configuration files
 
 ## v0.5.0
 
@@ -239,3 +270,5 @@
 - feat: add a `genesis_loader` for the node and mocking
 - feat: add `madara_tsukuyomi` as a submodule
 - branding: use new logo in the README
+- dev: Get the block status from the actual block in get_block_with_tx_hashes
+- fix: l1-l2 messaging
