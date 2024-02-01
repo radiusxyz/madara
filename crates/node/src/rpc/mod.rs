@@ -55,7 +55,8 @@ where
     C::Api: BlockBuilder<Block>,
     C::Api: pallet_starknet_runtime_api::StarknetRuntimeApi<Block>
         + pallet_starknet_runtime_api::ConvertTransactionRuntimeApi<Block>,
-    P: TransactionPool<Block = Block> + 'static,
+    G: GenesisProvider + Send + Sync + 'static,
+    P: EncryptedTransactionPool<Block = Block> + 'static,
     BE: Backend<Block> + 'static,
 {
     use mc_rpc::{

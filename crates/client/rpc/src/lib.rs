@@ -218,7 +218,7 @@ where
     C: ProvideRuntimeApi<B>,
     G: GenesisProvider + Send + Sync + 'static,
     C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-    P: TransactionPool<Block = B> + 'static,
+    P: EncryptedTransactionPool<Block = B> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     fn predeployed_accounts(&self) -> RpcResult<Vec<PredeployedAccountWithBalance>> {
@@ -1795,7 +1795,7 @@ where
     C: HeaderBackend<B> + BlockBackend<B> + StorageProvider<B, BE> + 'static,
     C: ProvideRuntimeApi<B>,
     C::Api: StarknetRuntimeApi<B> + ConvertTransactionRuntimeApi<B>,
-    P: TransactionPool<Block = B> + 'static,
+    P: EncryptedTransactionPool<Block = B> + 'static,
     H: HasherT + Send + Sync + 'static,
 {
     async fn simulate_transactions(
