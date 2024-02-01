@@ -2,6 +2,12 @@
 
 ## Next release
 
+- refactor: removed benchmarking folder and traces of CI pipeline
+- fix: decouple is_query into is_query and offset_version
+- feat: add sierra to casm class hash mapping to genesis assets
+- chore: remove ArgentMulticall from genesis assets
+- feat: remove `seq_addr_updated` from `GenesisData`
+- chore: added prometheus metrics for da layer
 - chore: bump celestia rpc crate version
 - fix(DA): run the proof first then the state update
 - fix: `prove_current_block` is called after `update_state`
@@ -30,6 +36,7 @@
 - feat(settlement): e2e test with Madara node settling on Ethereum contract
 - refactor: use `map` in `estimate_fee` to stop computation on error
 - fix: `tempdir` crate has been deprecated; use `tempfile` instead
+- dev: add avail and celestia crates behind a feature flag
 
 ## v0.6.0
 

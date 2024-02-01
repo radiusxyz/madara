@@ -208,7 +208,6 @@ where
 /// Taken from https://github.com/paritytech/substrate/blob/master/client/rpc/src/author/mod.rs#L78
 const TX_SOURCE: TransactionSource = TransactionSource::External;
 
-#[allow(unused_variables)]
 impl<A, B, BE, G, C, P, H> MadaraRpcApiServer for Starknet<A, B, BE, G, C, P, H>
 where
     A: ChainApi<Block = B> + 'static,
@@ -230,8 +229,7 @@ where
             .predeployed_accounts
             .into_iter()
             .map(|account| {
-                let contract_address: FieldElement = Felt252Wrapper(account.contract_address).into();
-                let class_hash: FieldElement = Felt252Wrapper(account.class_hash).into();
+                let contract_address: FieldElement = account.contract_address.into();
                 let balance_string = &self
                     .call(
                         FunctionCall {
@@ -252,7 +250,6 @@ where
 }
 
 #[async_trait]
-#[allow(unused_variables)]
 impl<A, B, BE, G, C, P, H> StarknetWriteRpcApiServer for Starknet<A, B, BE, G, C, P, H>
 where
     A: ChainApi<Block = B> + 'static,
@@ -1205,18 +1202,6 @@ where
         request: Vec<BroadcastedTransaction>,
         block_id: BlockId,
     ) -> RpcResult<Vec<FeeEstimate>> {
-        let is_query = request.iter().any(|tx| match tx {
-            BroadcastedTransaction::Invoke(invoke_tx) => invoke_tx.is_query,
-            BroadcastedTransaction::Declare(BroadcastedDeclareTransaction::V1(tx_v1)) => tx_v1.is_query,
-            BroadcastedTransaction::Declare(BroadcastedDeclareTransaction::V2(tx_v2)) => tx_v2.is_query,
-            BroadcastedTransaction::DeployAccount(deploy_tx) => deploy_tx.is_query,
-        });
-        if !is_query {
-            log::error!(
-                "Got `is_query`: false. In a future version, this will fail fee estimation with UnsupportedTxVersion"
-            );
-        }
-
         let substrate_block_hash = self.substrate_block_hash_from_starknet_block(block_id).map_err(|e| {
             error!("'{e}'");
             StarknetRpcApiError::BlockNotFound

@@ -14,10 +14,10 @@ use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_block_proposer::ProposerFactory;
 use mc_commitment_state_diff::CommitmentStateDiffWorker;
 use mc_config::config_map;
-use mc_data_availability::avail::config::AvailConfig;
-use mc_data_availability::avail::AvailClient;
-use mc_data_availability::celestia::config::CelestiaConfig;
-use mc_data_availability::celestia::CelestiaClient;
+#[cfg(feature = "avail")]
+use mc_data_availability::avail::{config::AvailConfig, AvailClient};
+#[cfg(feature = "celestia")]
+use mc_data_availability::celestia::{config::CelestiaConfig, CelestiaClient};
 use mc_data_availability::ethereum::config::EthereumConfig;
 use mc_data_availability::ethereum::EthereumClient;
 use mc_data_availability::{DaClient, DaLayer, DataAvailabilityWorker};
@@ -445,6 +445,7 @@ pub fn new_full(
         );
 
         let da_client: Arc<dyn DaClient + Send + Sync> = match da_layer {
+            #[cfg(feature = "celestia")]
             DaLayer::Celestia => {
                 let celestia_conf = CelestiaConfig::try_from(&da_path)?;
                 Arc::new(CelestiaClient::try_from(celestia_conf).map_err(|e| ServiceError::Other(e.to_string()))?)
@@ -453,6 +454,7 @@ pub fn new_full(
                 let ethereum_conf = EthereumConfig::try_from(&da_path)?;
                 Arc::new(EthereumClient::try_from(ethereum_conf)?)
             }
+            #[cfg(feature = "avail")]
             DaLayer::Avail => {
                 let avail_conf = AvailConfig::try_from(&da_path)?;
                 Arc::new(AvailClient::try_from(avail_conf).map_err(|e| ServiceError::Other(e.to_string()))?)
@@ -464,6 +466,7 @@ pub fn new_full(
             Some(MADARA_TASK_GROUP),
             DataAvailabilityWorker::<_, StarknetHasher>::prove_current_block(
                 da_client,
+                prometheus_registry.clone(),
                 commitment_state_diff_rx,
                 madara_backend.clone(),
             ),
