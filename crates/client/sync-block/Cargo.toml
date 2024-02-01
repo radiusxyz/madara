@@ -17,6 +17,5 @@ serde_with = { workspace = true, default-features = false }
 bincode = { workspace = true }
 hyper = { workspace = true, features = ["full"] }
 tokio = { workspace = true, features = ["full"] }
-dotenv = { workspace = true }
 mc-config = { workspace = true }
 log = { workspace = true, default-features = true }

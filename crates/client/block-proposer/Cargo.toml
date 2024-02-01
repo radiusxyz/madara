@@ -41,7 +41,6 @@ madara-runtime = { workspace = true }
 hyper = { workspace = true }
 tokio = { workspace = true }
 base64 = { workspace = true }
-dotenv = { workspace = true }
 
 mp-felt = { workspace = true }
 mp-transactions = { workspace = true, features = ["serde"] }

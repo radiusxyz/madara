@@ -65,7 +65,6 @@ thiserror = { workspace = true }
 starknet-crypto = { workspace = true, default-features = false, features = [
   "alloc",
 ] }
-dotenv = { workspace = true }
 mc-config = { workspace = true }
 tokio = { workspace = true, default-features = true, features = ["time"] }
 # Encrypted mempool
