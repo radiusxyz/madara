@@ -11,7 +11,7 @@ use sp_runtime::transaction_validity::{
 use starknet_api::api_core::{ContractAddress, Nonce, PatriciaKey};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
-use starknet_api::transaction::{Event as StarknetEvent, EventContent, EventData, EventKey, Fee, TransactionHash};
+use starknet_api::transaction::{Event as StarknetEvent, EventContent, EventData, EventKey, TransactionHash};
 use starknet_core::utils::get_selector_from_name;
 use starknet_crypto::FieldElement;
 
@@ -19,7 +19,6 @@ use super::constants::{BLOCKIFIER_ACCOUNT_ADDRESS, MULTIPLE_EVENT_EMITTING_CONTR
 use super::mock::default_mock::*;
 use super::mock::*;
 use super::utils::sign_message_hash;
-use crate::message::Message;
 use crate::tests::{
     get_invoke_argent_dummy, get_invoke_braavos_dummy, get_invoke_dummy, get_invoke_emit_event_dummy,
     get_invoke_nonce_dummy, get_invoke_openzeppelin_dummy, get_storage_read_write_dummy, set_nonce,
@@ -58,25 +57,12 @@ fn given_hardcoded_contract_run_invoke_tx_then_it_works() {
 
         let transaction: InvokeTransaction = get_invoke_dummy(Felt252Wrapper::ZERO).into();
 
-        let tx = Message {
-            topics: vec![
-                "0xdb80dd488acf86d17c747445b0eabb5d57c541d3bd7b6b87af987858e5066b2b".to_owned(),
-                "0x0000000000000000000000000000000000000000000000000000000000000001".to_owned(),
-                "0x0000000000000000000000000000000000000000000000000000000000000001".to_owned(),
-                "0x01310e2c127c3b511c5ac0fd7949d544bb4d75b8bc83aaeb357e712ecf582771".to_owned(),
-            ],
-            data: "0x0000000000000000000000000000000000000000000000000000000000000001".to_owned(),
-        }
-        .try_into_transaction()
-        .unwrap();
-
         assert_ok!(Starknet::invoke(none_origin.clone(), transaction));
-        assert_ok!(Starknet::consume_l1_message(none_origin, tx, Fee(100)));
 
         let pending_txs = Starknet::pending();
-        pretty_assertions::assert_eq!(pending_txs.len(), 2);
+        pretty_assertions::assert_eq!(pending_txs.len(), 1);
         let pending_hashes = Starknet::pending_hashes();
-        pretty_assertions::assert_eq!(pending_hashes.len(), 2);
+        pretty_assertions::assert_eq!(pending_hashes.len(), 1);
 
         assert_eq!(
             pending_hashes[0],
@@ -426,6 +412,55 @@ fn given_hardcoded_contract_run_invoke_with_inner_call_in_validate_then_it_fails
 }
 
 #[test]
+fn given_account_not_deployed_invoke_tx_works_for_nonce_one() {
+    new_test_ext::<MockRuntime>().execute_with(|| {
+        basic_test_setup(2);
+
+        // Wrong address (not deployed)
+        let contract_address = Felt252Wrapper::from_hex_be("0x13123131").unwrap();
+
+        let transaction = InvokeTransactionV1 {
+            sender_address: contract_address,
+            calldata: vec![],
+            nonce: Felt252Wrapper::ONE,
+            max_fee: u128::MAX,
+            signature: vec![],
+        };
+
+        assert_ok!(Starknet::validate_unsigned(
+            TransactionSource::InBlock,
+            &crate::Call::invoke { transaction: transaction.into() }
+        ));
+    })
+}
+
+#[test]
+fn given_account_not_deployed_invoke_tx_fails_for_nonce_not_one() {
+    new_test_ext::<MockRuntime>().execute_with(|| {
+        basic_test_setup(2);
+
+        // Wrong address (not deployed)
+        let contract_address = Felt252Wrapper::from_hex_be("0x13123131").unwrap();
+
+        let transaction = InvokeTransactionV1 {
+            sender_address: contract_address,
+            calldata: vec![],
+            nonce: Felt252Wrapper::TWO,
+            max_fee: u128::MAX,
+            signature: vec![],
+        };
+
+        assert_eq!(
+            Starknet::validate_unsigned(
+                TransactionSource::InBlock,
+                &crate::Call::invoke { transaction: transaction.into() }
+            ),
+            Err(TransactionValidityError::Invalid(InvalidTransaction::BadProof))
+        );
+    })
+}
+
+#[test]
 fn test_verify_tx_longevity() {
     new_test_ext::<MockRuntime>().execute_with(|| {
         basic_test_setup(2);
@@ -442,29 +477,6 @@ fn test_verify_tx_longevity() {
 }
 
 #[test]
-fn test_verify_no_require_tag() {
-    new_test_ext::<MockRuntime>().execute_with(|| {
-        basic_test_setup(2);
-
-        let transaction = get_invoke_dummy(Felt252Wrapper::ZERO);
-
-        let validate_result = Starknet::validate_unsigned(
-            TransactionSource::InBlock,
-            &crate::Call::invoke { transaction: transaction.clone().into() },
-        );
-
-        let valid_transaction_expected = ValidTransaction::with_tag_prefix("starknet")
-            .priority(u64::MAX - (TryInto::<u64>::try_into(transaction.nonce)).unwrap())
-            .and_provides((transaction.sender_address, transaction.nonce))
-            .longevity(TransactionLongevity::get())
-            .propagate(true)
-            .build();
-
-        assert_eq!(validate_result.unwrap(), valid_transaction_expected.unwrap())
-    });
-}
-
-#[test]
 fn test_verify_require_tag() {
     new_test_ext::<MockRuntime>().execute_with(|| {
         basic_test_setup(2);
@@ -477,7 +489,7 @@ fn test_verify_require_tag() {
         );
 
         let valid_transaction_expected = ValidTransaction::with_tag_prefix("starknet")
-            .priority(u64::MAX - (TryInto::<u64>::try_into(transaction.nonce)).unwrap())
+            .priority(u64::MAX)
             .and_provides((transaction.sender_address, transaction.nonce))
             .longevity(TransactionLongevity::get())
             .propagate(true)

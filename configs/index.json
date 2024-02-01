@@ -1,5 +1,5 @@
 {
-  "remote_base_path": "https://raw.githubusercontent.com/Juul-Mc-Goa/madara/main/configs/",
+  "remote_base_path": "https://raw.githubusercontent.com/keep-starknet-strange/madara/main/configs/",
   "genesis_assets": [
     {
       "name": "Account.json",
@@ -31,7 +31,7 @@
     },
     {
       "name": "genesis.json",
-      "md5": "eab09ab8efae29edbb534c077f1a8179"
+      "md5": "19f69e5c1019a289af40873c251587e8"
     },
     {
       "name": "NoValidateAccount.casm.json",
@@ -51,11 +51,19 @@
     },
     {
       "name": "test.json",
-      "md5": "b022be5ad4dae9599d4fa44467abfbd9"
+      "md5": "3b96fc40d4fee4921c0ee44f3af5cec5"
     },
     {
       "name": "UniversalDeployer.json",
       "md5": "d917baa8b1455f946d095d467dcdba47"
+    },
+    {
+      "name": "ArgentAccountCairoOne.json",
+      "md5": "6f245cc2e6d8e03fec53d363872d2b9c"
+    },
+    {
+      "name": "ArgentAccountCairoOne.casm.json",
+      "md5": "27978b53c8589808be0347879a66da0d"
     }
   ]
 }

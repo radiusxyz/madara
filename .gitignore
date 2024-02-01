@@ -41,3 +41,10 @@ cairo_venv
 /crates/client/epool
 
 /epool
+
+# pyenv
+.python-version
+
+# solidity cache
+starknet-e2e-test/contracts/cache
+starknet-e2e-test/contracts/build

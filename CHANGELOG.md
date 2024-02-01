@@ -2,11 +2,31 @@
 
 ## Next release
 
+- ci: add foundry ci task to push workflow
+- fix: first tx for non deployed account is valid
+- fix: incorrect base url for fetching config
 - feat: add predeployed accounts to genesis state
 - feat(rpc): Added starknet_simulateTransactions
 - fix: Change serialization of bitvec to &[u8] in merkle tree to avoid memory
   uninitialized
 - chore: change SCARB config version for foundry CI
+- feat(da): update da calldata encoding to v0.11.0 spec, da conf examples, da
+  conf flag, da-tests in CI
+- refactor: use `map` in `estimate_fee` to stop computation on error
+- fix(node/commands): md5 are also checked when running setup --from-local
+- feat(data-availability): extend eth config with poll interval
+- fix(snos-output): expose snos codec, remove unused `get_starknet_messages`
+  runtime method, and unnecessary mp-snos-output dependencies
+- feat(program-hash): add new pallet constant for Starknet OS progam hash;
+  expose runtime getter method; add dedicated crate to manage versions
+- feat(runtime): expose fee token address getter method
+- feat(settlement): run client thread responsible for pushing state updates and
+  messaging on Ethereum
+- feat(settlement): starknet core contract tests with anvil sandbox
+- fix(rpc-test): incorrect node url
+- feat(settlement): e2e test with Madara node settling on Ethereum contract
+- refactor: use `map` in `estimate_fee` to stop computation on error
+- fix: `tempdir` crate has been deprecated; use `tempfile` instead
 
 ## v0.6.0
 
@@ -44,7 +64,6 @@
 - chore(data-availability-avail): implement fire and forget, and add ws
   reconnection logic
 - chore: update `polkadot-sdk` to `release-polkadot-v1.3.0`
-- refactor: use `map` in `estimate_fee` to stop computation on error
 
 ## v0.5.0
 
@@ -162,6 +181,8 @@
 - fix: rpc tests and background node run
 - test: add tests for simulate tx offset
 - test: add tests for tx hashing
+- fix: bring back messages in transaction receipts
+- feat: starknet os program output primitive
 
 ## v0.2.0
 
