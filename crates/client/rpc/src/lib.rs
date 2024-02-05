@@ -29,8 +29,8 @@ pub use mc_rpc_core::{
 };
 use mc_storage::OverrideHandle;
 use mc_transaction_pool::decryptor::Decryptor;
+use mc_transaction_pool::vdf::{ReturnData, Vdf};
 use mc_transaction_pool::{ChainApi, EncryptedTransactionPool, Pool};
-use mp_crypto::vdf::{ReturnData, Vdf};
 use mp_felt::{Felt252Wrapper, Felt252WrapperError};
 use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
@@ -520,8 +520,11 @@ where
                 })?
                 .clone();
 
-            block_transaction_pool
-                .update_decryption_keys(decryption_info.order, decryption_info.decryption_key.as_str());
+            if !block_transaction_pool.provide_decryption_key(decryption_info.order) {
+                log::error! {
+                "Failed to provide decryption key (block number: {block_height}, order: {}). The decryption key is already provided.", decryption_info.order};
+                return Err(StarknetRpcApiError::InternalServerError.into());
+            }
 
             encrypted_invoke_transaction
         };

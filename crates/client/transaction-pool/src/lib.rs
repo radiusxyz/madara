@@ -29,6 +29,8 @@ pub mod error;
 mod graph;
 mod metrics;
 mod revalidation;
+#[allow(missing_docs)]
+pub mod vdf;
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::Arc;

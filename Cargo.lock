@@ -6694,7 +6694,6 @@ dependencies = [
  "mc-storage",
  "mc-transaction-pool",
  "mp-block",
- "mp-crypto",
  "mp-fee",
  "mp-felt",
  "mp-hashers",
@@ -6849,12 +6848,12 @@ dependencies = [
  "encryptor",
  "futures",
  "futures-timer",
+ "gmp-mpfr-sys",
  "jsonrpsee 0.20.3",
  "linked-hash-map",
  "log",
  "mc-config",
  "mc-sync-block",
- "mp-crypto",
  "mp-transactions",
  "num-traits 0.2.17",
  "parity-scale-codec",
@@ -7075,15 +7074,6 @@ version = "0.6.0"
 dependencies = [
  "mp-felt",
  "starknet-ff 0.3.5 (git+https://github.com/xJonathanLEI/starknet-rs.git?rev=64ebc36)",
-]
-
-[[package]]
-name = "mp-crypto"
-version = "0.6.0"
-dependencies = [
- "gmp-mpfr-sys",
- "serde",
- "serde_json",
 ]
 
 [[package]]

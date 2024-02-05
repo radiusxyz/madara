@@ -678,7 +678,7 @@ where
             Box::pin(async move {
                 tokio::time::sleep(Duration::from_secs(1)).await;
 
-                let (encrypted_invoke_transaction, decryption_key) = {
+                let encrypted_invoke_transaction = {
                     let locked_encrypted_mempool = encrypted_mempool.lock().await;
                     let Some(encrypted_transaction_block) =
                         locked_encrypted_mempool.get_block_encrypted_transaction_pool(&block_height)
@@ -687,7 +687,12 @@ where
                         return;
                     };
 
-                    let tx = match encrypted_transaction_block.get_encrypted_invoke_tx(order) {
+                    if encrypted_transaction_block.is_provided_decryption_key(order) {
+                        log::info!("Decryption key is already provided. Skip decrypting at order: {order}");
+                        return;
+                    }
+
+                    let encrypted_tx = match encrypted_transaction_block.get_encrypted_invoke_tx(order) {
                         Ok(encrypted_tx) => encrypted_tx.clone(),
                         Err(e) => {
                             log::error!("Failed to get encrypted_invoke_transaction: {e}");
@@ -695,14 +700,14 @@ where
                         }
                     };
 
-                    (tx, encrypted_transaction_block.get_decryption_key(order).cloned())
+                    encrypted_tx
                 };
 
                 let decryptor = Decryptor::default();
                 let invoke_tx_result: Result<InvokeTransaction, _> = if using_external_decryptor {
                     decryptor.delegate_to_decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction).await
                 } else {
-                    decryptor.decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, decryption_key).await
+                    decryptor.decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, None).await
                 };
 
                 let invoke_tx = match invoke_tx_result {

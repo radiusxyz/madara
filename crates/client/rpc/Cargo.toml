@@ -53,7 +53,6 @@ jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
 ] }
 log = { workspace = true, default-features = true }
-mp-crypto = { workspace = true }
 mp-transactions = { workspace = true, features = ["client", "serde"] }
 mp-block = { workspace = true, default-features = true }
 mp-fee = { workspace = true, default-features = true }

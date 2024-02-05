@@ -87,6 +87,7 @@ impl Vdf {
         return_data
     }
 
+    /// Sets up the VDF for a given time parameter `_t`.
     pub fn setup(&self, _t: u64) -> String {
         init_randstate!(rstate);
         init_big_int!(p);
@@ -161,6 +162,7 @@ impl Vdf {
         serde_json::to_string(&r_data).unwrap()
     }
 
+    /// Evaluates the VDF for a given time parameter `_t`, group element `_g`, and modulus `_n`.
     pub fn evaluate(&self, _t: u64, _g: String, _n: String) -> String {
         init_big_int_from_string!(g, _g, self.base);
         init_big_int_from_string!(n, _n, self.base);
@@ -178,6 +180,8 @@ impl Vdf {
         Vdf::mpz_t_to_string(y, self.base)
     }
 
+    /// Evaluates the VDF with a trapdoor for a given time parameter `_t`, group element `_g`,
+    /// modulus `_n`, and trapdoor `_trapdoor`.
     pub fn evaluate_with_trapdoor(&self, _t: u64, _g: String, _n: String, _trapdoor: String) -> String {
         init_big_int_from_string!(g, _g, self.base);
         init_big_int_from_string!(n, _n, self.base);

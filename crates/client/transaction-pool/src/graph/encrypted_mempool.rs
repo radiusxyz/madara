@@ -2,7 +2,7 @@
 #![warn(missing_docs)]
 #![warn(unused_extern_crates)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use mc_sync_block::get_sync_db;
 use mp_transactions::EncryptedInvokeTransaction;
@@ -17,7 +17,7 @@ pub struct BlockEncryptedTransactionPool {
     encrypted_transaction_pool: HashMap<u64, EncryptedInvokeTransaction>,
 
     /// store decryption keys.
-    decryption_keys: HashMap<u64, String>,
+    decryption_keys: HashSet<u64>,
 
     /// current order
     order: u64, // decrypted_tx_count + raw_tx_count
@@ -37,7 +37,7 @@ impl BlockEncryptedTransactionPool {
     pub fn new() -> Self {
         Self {
             encrypted_transaction_pool: HashMap::default(),
-            decryption_keys: HashMap::default(),
+            decryption_keys: HashSet::default(),
             order: 0,
             decrypted_tx_count: 0,
             raw_tx_count: 0,
@@ -111,9 +111,9 @@ impl BlockEncryptedTransactionPool {
         self.decrypted_tx_count + self.raw_tx_count
     }
 
-    /// update key received information
-    pub fn update_decryption_keys(&mut self, order: u64, decryption_key: &str) {
-        self.decryption_keys.insert(order, decryption_key.to_string());
+    /// provide decryption key
+    pub fn provide_decryption_key(&mut self, order: u64) -> bool {
+        self.decryption_keys.insert(order)
     }
 
     /// delete invalid encrypted tx
@@ -129,9 +129,9 @@ impl BlockEncryptedTransactionPool {
         log::info!("Delete encrypted tx on {order:?}.");
     }
 
-    /// get key received information
-    pub fn get_decryption_key(&self, order: u64) -> Option<&String> {
-        self.decryption_keys.get(&order)
+    /// is provided decryption key
+    pub fn is_provided_decryption_key(&self, order: u64) -> bool {
+        self.decryption_keys.contains(&order)
     }
 }
 
@@ -424,404 +424,4 @@ mod tests {
             decryption_key: y,
         })
     }
-
-    // #[test]
-    // fn should_import_transaction_to_ready() {
-    //     // given
-    //     let mut pool = pool();
-
-    //     // when
-    //     pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]], ..DEFAULT_TX
-    // }).unwrap();
-
-    //     // then
-    //     assert_eq!(pool.ready().count(), 1);
-    //     assert_eq!(pool.ready.len(), 1);
-    // }
-
-    // #[test]
-    // fn should_not_import_same_transaction_twice() {
-    //     // given
-    //     let mut pool = pool();
-
-    //     // when
-    //     pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]], ..DEFAULT_TX
-    // }).unwrap();     pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]],
-    // ..DEFAULT_TX }).unwrap_err();
-
-    //     // then
-    //     assert_eq!(pool.ready().count(), 1);
-    //     assert_eq!(pool.ready.len(), 1);
-    // }
-
-    // #[test]
-    // fn should_import_transaction_to_future_and_promote_it_later() {
-    //     // given
-    //     let mut pool = pool();
-
-    //     // when
-    //     pool.import(Transaction { data: vec![1u8], requires: vec![vec![0]], provides:
-    // vec![vec![1]], ..DEFAULT_TX })         .unwrap();
-    //     assert_eq!(pool.ready().count(), 0);
-    //     assert_eq!(pool.ready.len(), 0);
-    //     pool.import(Transaction { data: vec![2u8], hash: 2, provides: vec![vec![0]], ..DEFAULT_TX
-    // }).unwrap();
-
-    //     // then
-    //     assert_eq!(pool.ready().count(), 2);
-    //     assert_eq!(pool.ready.len(), 2);
-    // }
-
-    // #[test]
-    // fn should_promote_a_subgraph() {
-    //     // given
-    //     let mut pool = pool();
-
-    //     // when
-    //     pool.import(Transaction { data: vec![1u8], requires: vec![vec![0]], provides:
-    // vec![vec![1]], ..DEFAULT_TX })         .unwrap();
-    //     pool.import(Transaction { data: vec![3u8], hash: 3, requires: vec![vec![2]], ..DEFAULT_TX
-    // }).unwrap();     pool.import(Transaction {
-    //         data: vec![2u8],
-    //         hash: 2,
-    //         requires: vec![vec![1]],
-    //         provides: vec![vec![3], vec![2]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-    //     pool.import(Transaction {
-    //         data: vec![4u8],
-    //         hash: 4,
-    //         priority: 1_000u64,
-    //         requires: vec![vec![3], vec![4]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-    //     assert_eq!(pool.ready().count(), 0);
-    //     assert_eq!(pool.ready.len(), 0);
-
-    //     let res = pool
-    //         .import(Transaction { data: vec![5u8], hash: 5, provides: vec![vec![0], vec![4]],
-    // ..DEFAULT_TX })         .unwrap();
-
-    //     // then
-    //     let mut it = pool.ready().map(|tx| tx.data[0]);
-
-    //     assert_eq!(it.next(), Some(5));
-    //     assert_eq!(it.next(), Some(1));
-    //     assert_eq!(it.next(), Some(2));
-    //     assert_eq!(it.next(), Some(4));
-    //     assert_eq!(it.next(), Some(3));
-    //     assert_eq!(it.next(), None);
-    //     assert_eq!(res, Imported::Ready { hash: 5, promoted: vec![1, 2, 3, 4], failed: vec![],
-    // removed: vec![] }); }
-
-    // #[test]
-    // fn should_handle_a_cycle() {
-    //     // given
-    //     let mut pool = pool();
-    //     pool.import(Transaction { data: vec![1u8], requires: vec![vec![0]], provides:
-    // vec![vec![1]], ..DEFAULT_TX })         .unwrap();
-    //     pool.import(Transaction {
-    //         data: vec![3u8],
-    //         hash: 3,
-    //         requires: vec![vec![1]],
-    //         provides: vec![vec![2]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-    //     assert_eq!(pool.ready().count(), 0);
-    //     assert_eq!(pool.ready.len(), 0);
-
-    //     // when
-    //     pool.import(Transaction {
-    //         data: vec![2u8],
-    //         hash: 2,
-    //         requires: vec![vec![2]],
-    //         provides: vec![vec![0]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-
-    //     // then
-    //     {
-    //         let mut it = pool.ready().map(|tx| tx.data[0]);
-    //         assert_eq!(it.next(), None);
-    //     }
-    //     // all transactions occupy the Future queue - it's fine
-    //     assert_eq!(pool.future.len(), 3);
-
-    //     // let's close the cycle with one additional transaction
-    //     let res = pool
-    //         .import(Transaction { data: vec![4u8], hash: 4, priority: 50u64, provides:
-    // vec![vec![0]], ..DEFAULT_TX })         .unwrap();
-    //     let mut it = pool.ready().map(|tx| tx.data[0]);
-    //     assert_eq!(it.next(), Some(4));
-    //     assert_eq!(it.next(), Some(1));
-    //     assert_eq!(it.next(), Some(3));
-    //     assert_eq!(it.next(), None);
-    //     assert_eq!(res, Imported::Ready { hash: 4, promoted: vec![1, 3], failed: vec![2],
-    // removed: vec![] });     assert_eq!(pool.future.len(), 0);
-    // }
-
-    // #[test]
-    // fn should_handle_a_cycle_with_low_priority() {
-    //     // given
-    //     let mut pool = pool();
-    //     pool.import(Transaction { data: vec![1u8], requires: vec![vec![0]], provides:
-    // vec![vec![1]], ..DEFAULT_TX })         .unwrap();
-    //     pool.import(Transaction {
-    //         data: vec![3u8],
-    //         hash: 3,
-    //         requires: vec![vec![1]],
-    //         provides: vec![vec![2]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-    //     assert_eq!(pool.ready().count(), 0);
-    //     assert_eq!(pool.ready.len(), 0);
-
-    //     // when
-    //     pool.import(Transaction {
-    //         data: vec![2u8],
-    //         hash: 2,
-    //         requires: vec![vec![2]],
-    //         provides: vec![vec![0]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-
-    //     // then
-    //     {
-    //         let mut it = pool.ready().map(|tx| tx.data[0]);
-    //         assert_eq!(it.next(), None);
-    //     }
-    //     // all transactions occupy the Future queue - it's fine
-    //     assert_eq!(pool.future.len(), 3);
-
-    //     // let's close the cycle with one additional transaction
-    //     let err = pool
-    //         .import(Transaction {
-    //             data: vec![4u8],
-    //             hash: 4,
-    //             priority: 1u64, // lower priority than Tx(2)
-    //             provides: vec![vec![0]],
-    //             ..DEFAULT_TX
-    //         })
-    //         .unwrap_err();
-    //     let mut it = pool.ready().map(|tx| tx.data[0]);
-    //     assert_eq!(it.next(), None);
-    //     assert_eq!(pool.ready.len(), 0);
-    //     assert_eq!(pool.future.len(), 0);
-    //     if let error::Error::CycleDetected = err {
-    //     } else {
-    //         unreachable!("Invalid error kind: {:?}", err);
-    //     }
-    // }
-
-    // #[test]
-    // fn should_remove_invalid_transactions() {
-    //     // given
-    //     let mut pool = pool();
-    //     pool.import(Transaction { data: vec![5u8], hash: 5, provides: vec![vec![0], vec![4]],
-    // ..DEFAULT_TX }).unwrap();     pool.import(Transaction { data: vec![1u8], requires:
-    // vec![vec![0]], provides: vec![vec![1]], ..DEFAULT_TX })         .unwrap();
-    //     pool.import(Transaction { data: vec![3u8], hash: 3, requires: vec![vec![2]], ..DEFAULT_TX
-    // }).unwrap();     pool.import(Transaction {
-    //         data: vec![2u8],
-    //         hash: 2,
-    //         requires: vec![vec![1]],
-    //         provides: vec![vec![3], vec![2]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-    //     pool.import(Transaction {
-    //         data: vec![4u8],
-    //         hash: 4,
-    //         priority: 1_000u64,
-    //         requires: vec![vec![3], vec![4]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-    //     // future
-    //     pool.import(Transaction {
-    //         data: vec![6u8],
-    //         hash: 6,
-    //         priority: 1_000u64,
-    //         requires: vec![vec![11]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-    //     assert_eq!(pool.ready().count(), 5);
-    //     assert_eq!(pool.future.len(), 1);
-
-    //     // when
-    //     pool.remove_subtree(&[6, 1]);
-
-    //     // then
-    //     assert_eq!(pool.ready().count(), 1);
-    //     assert_eq!(pool.future.len(), 0);
-    // }
-
-    // #[test]
-    // fn should_prune_ready_transactions() {
-    //     // given
-    //     let mut pool = pool();
-    //     // future (waiting for 0)
-    //     pool.import(Transaction {
-    //         data: vec![5u8],
-    //         hash: 5,
-    //         requires: vec![vec![0]],
-    //         provides: vec![vec![100]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-    //     // ready
-    //     pool.import(Transaction { data: vec![1u8], provides: vec![vec![1]], ..DEFAULT_TX
-    // }).unwrap();     pool.import(Transaction {
-    //         data: vec![2u8],
-    //         hash: 2,
-    //         requires: vec![vec![2]],
-    //         provides: vec![vec![3]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-    //     pool.import(Transaction {
-    //         data: vec![3u8],
-    //         hash: 3,
-    //         requires: vec![vec![1]],
-    //         provides: vec![vec![2]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-    //     pool.import(Transaction {
-    //         data: vec![4u8],
-    //         hash: 4,
-    //         priority: 1_000u64,
-    //         requires: vec![vec![3], vec![2]],
-    //         provides: vec![vec![4]],
-    //         ..DEFAULT_TX
-    //     })
-    //     .unwrap();
-
-    //     assert_eq!(pool.ready().count(), 4);
-    //     assert_eq!(pool.future.len(), 1);
-
-    //     // when
-    //     let result = pool.prune_tags(vec![vec![0], vec![2]]);
-
-    //     // then
-    //     assert_eq!(result.pruned.len(), 2);
-    //     assert_eq!(result.failed.len(), 0);
-    //     assert_eq!(result.promoted[0], Imported::Ready { hash: 5, promoted: vec![], failed:
-    // vec![], removed: vec![] });     assert_eq!(result.promoted.len(), 1);
-    //     assert_eq!(pool.future.len(), 0);
-    //     assert_eq!(pool.ready.len(), 3);
-    //     assert_eq!(pool.ready().count(), 3);
-    // }
-
-    // #[test]
-    // fn transaction_debug() {
-    //     assert_eq!(
-    //         format!(
-    //             "{:?}",
-    //             Transaction {
-    //                 data: vec![4u8],
-    //                 hash: 4,
-    //                 priority: 1_000u64,
-    //                 requires: vec![vec![3], vec![2]],
-    //                 provides: vec![vec![4]],
-    //                 ..DEFAULT_TX
-    //             }
-    //         ),
-    //         "Transaction { hash: 4, priority: 1000, valid_till: 64, bytes: 1, propagate: true,
-    // source: \          TransactionSource::External, requires: [03, 02], provides: [04], data:
-    // [4]}"             .to_owned()
-    //     );
-    // }
-
-    // #[test]
-    // fn transaction_propagation() {
-    //     assert!(
-    //         Transaction {
-    //             data: vec![4u8],
-    //             hash: 4,
-    //             priority: 1_000u64,
-    //             requires: vec![vec![3], vec![2]],
-    //             provides: vec![vec![4]],
-    //             ..DEFAULT_TX
-    //         }
-    //         .is_propagable(),
-    //     );
-
-    //     assert!(
-    //         !Transaction {
-    //             data: vec![4u8],
-    //             hash: 4,
-    //             priority: 1_000u64,
-    //             requires: vec![vec![3], vec![2]],
-    //             provides: vec![vec![4]],
-    //             propagate: false,
-    //             ..DEFAULT_TX
-    //         }
-    //         .is_propagable(),
-    //     );
-    // }
-
-    // #[test]
-    // fn should_reject_future_transactions() {
-    //     // given
-    //     let mut pool = pool();
-
-    //     // when
-    //     pool.reject_future_transactions = true;
-
-    //     // then
-    //     let err = pool.import(Transaction { data: vec![5u8], hash: 5, requires: vec![vec![0]],
-    // ..DEFAULT_TX });
-
-    //     if let Err(error::Error::RejectedFutureTransaction) = err {
-    //     } else {
-    //         unreachable!("Invalid error kind: {:?}", err);
-    //     }
-    // }
-
-    // #[test]
-    // fn should_clear_future_queue() {
-    //     // given
-    //     let mut pool = pool();
-
-    //     // when
-    //     pool.import(Transaction { data: vec![5u8], hash: 5, requires: vec![vec![0]], ..DEFAULT_TX
-    // }).unwrap();
-
-    //     // then
-    //     assert_eq!(pool.future.len(), 1);
-
-    //     // and then when
-    //     assert_eq!(pool.clear_future().len(), 1);
-
-    //     // then
-    //     assert_eq!(pool.future.len(), 0);
-    // }
-
-    // #[test]
-    // fn should_accept_future_transactions_when_explicitly_asked_to() {
-    //     // given
-    //     let mut pool = pool();
-    //     pool.reject_future_transactions = true;
-
-    //     // when
-    //     let flag_value = pool.with_futures_enabled(|pool, flag| {
-    //         pool.import(Transaction { data: vec![5u8], hash: 5, requires: vec![vec![0]],
-    // ..DEFAULT_TX }).unwrap();
-
-    //         flag
-    //     });
-
-    //     // then
-    //     assert!(flag_value);
-    //     assert!(pool.reject_future_transactions);
-    //     assert_eq!(pool.future.len(), 1);
-    // }
 }
