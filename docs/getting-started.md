@@ -73,7 +73,10 @@ RUSTLOG=runtime=info cargo run --release -- --dev
 
 ### Encrypted Mempool (additional feature)
 
-Madara now includes an encrypted mempool feature, enhancing the privacy and security of transaction handling. This feature allows transactions to be encrypted before being added to the block, providing an additional layer of security.
+Madara now includes an encrypted mempool feature, enhancing the security of MEV resistancy and censorship.
+This feature allows transactions to be encrypted before being added to the block, providing an additional layer of security.
+
+# Todo: 개념 추가(기능 관련 + time lock puzzle)
 
 #### Key Features
 
