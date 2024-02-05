@@ -54,7 +54,7 @@ The encrypted mempool introduces three additional APIs
 
 Offering a brief overview of usage as follows:
 
-1. starknet_addEncryptedInvokeTransaction: This API adds an `EncryptedInvokeTransaction` to the `Encrypted Mempool`, and generates an transaction order and signature.  
+1. `starknet_addEncryptedInvokeTransaction`: This API adds an `EncryptedInvokeTransaction` to the `Encrypted Mempool`, and generates an transaction order and signature.  
 (If added into the `Encrypted mempool`, the `EncryptedInvokeTransaction` is decrypted and submitted when the `block-proposer` applies extrinsic.)
 
     ```bash
@@ -106,7 +106,7 @@ Offering a brief overview of usage as follows:
         }, "id":1}' http://localhost:9944
     ```
 
-3. starknet_decryptEncryptedInvokeTransaction: API for test that decrypts an `EncryptedInvokeTransaction`, and return the decrypted `InvokeTransaction` as result.
+3. `starknet_decryptEncryptedInvokeTransaction`: API for test that decrypts an `EncryptedInvokeTransaction`, and return the decrypted `InvokeTransaction` as result.
 
     ```bash
     curl -H "Content-Type: application/json" --data '{"jsonrpc":"2.0", "method":"starknet_decryptEncryptedInvokeTransaction", "params":{
