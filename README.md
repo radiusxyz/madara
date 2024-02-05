@@ -57,7 +57,7 @@ Get started with our comprehensive documentation, which covers everything from
 project structure and architecture to benchmarking and running Madara:
 
 - [Getting Started Guide](./docs/getting-started.md)
-- [Getting Started Guide with Encrypted mempool](./docs/getting-started.md)
+- [Getting Started Guide with Encrypted mempool](./docs/getting-started-with-encrypted-mempool.md)
 - [Architecture Overview](./docs/architecture.md)
 - [Chain Genesis Information](./docs/genesis.md)
 - [Project Structure](./docs/project-structure.md)
@@ -127,12 +127,12 @@ You should consider forking parts of Madara.
 - Custom FRAME pallets for Starknet functionality 🔧
 - Comprehensive documentation 📚
 - Active development and community support 🤝
-- Encrypted mempool 
+- Encrypted mempool 💫
 
 ## 🏗️ Build & Run
 
 Want to dive straight in? Check out our
-[Getting Started Guide](./docs/getting-started.md) for instructions on how to
+[Getting Started Guide](./docs/getting-started.md)(+ [with Encrypted mempool](./docs/getting-started-with-encrypted-mempool.md)) for instructions on how to
 build and run Madara on your local machine.
 
 ## Benchmarking
