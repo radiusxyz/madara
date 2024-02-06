@@ -96,7 +96,7 @@ Offering a brief overview of usage as follows:
         }, "id":1}' http://localhost:9944
     ```
 
-    The `t`, `encrypted_data`, `nonce`, `g`, `n` mentioned here are parameters used to decrypt the encrypted transaction.
+    Above, `t`, `encrypted_data`, `nonce`, `g`, and `n` are parameters used for encryption and decryption through time-lock puzzle.
 
     - t  
     `t` represents the time parameter used in a `VDF`(time-lock puzzle). It determines the amount of time required for the computation. The larger the value of t, the longer the computation takes.
