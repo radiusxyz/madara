@@ -3,7 +3,6 @@ pub const MAX_EVENTS_KEYS: usize = 100;
 /// Maximum number of events that can be fetched in a single chunk for the `get_events` RPC.
 pub const MAX_EVENTS_CHUNK_SIZE: usize = 1000;
 
-// Todo(jaemin): To be removed
 /// Constant representing the modulus
 /// q = 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
 pub(crate) const MODULUS: [u64; 4] = [0xffffffff00000001, 0x53bda402fffe5bfe, 0x3339d80809a1d805, 0x73eda753299d7d48];

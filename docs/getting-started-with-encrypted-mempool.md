@@ -96,6 +96,23 @@ Offering a brief overview of usage as follows:
         }, "id":1}' http://localhost:9944
     ```
 
+    The `t`, `encrypted_data`, `nonce`, `g`, `n` mentioned here are parameters used to decrypt the encrypted transaction.
+
+    - t  
+    `t` represents the time parameter used in a `VDF`(time-lock puzzle). It determines the amount of time required for the computation. The larger the value of t, the longer the computation takes.
+
+    - encrypted_data
+    The encrypted data is generated through the following steps:
+    By using a `VDF`(time-lock puzzle) setup, the value `y` is created based on the `t` value. This `y` value is then used to generate a `Poseidon secret key`(different from the `decryption key`) through Poseidon encryption.
+    `Poseidon secret key` is encrypted with `InvokeTransaction`(as a string),  resulting in hex-encoded data.
+
+    - nonce  
+    The nonce is a random value generated during the encrypting process with the `InvokeTransaction`(as a string) and `Poseidon secret key` above.
+    Nonce stands for "number used once" and is a unique number used for each transaction to prevent replay attacks. This ensures that transactions are not duplicated and executed more than once.
+    
+    - g and n  
+    Parameters generated during the `VDF`(time-lock puzzle) setup. `g` is the base (group element), and `n` is the modulus.
+
 3. `starknet_addEncryptedInvokeTransaction`: This API adds an `EncryptedInvokeTransaction` to the `Encrypted Mempool`, and generates an transaction order and signature.  
 (If added into the `Encrypted mempool`, the `EncryptedInvokeTransaction` is decrypted and submitted when the `block-proposer` applies extrinsic.)
 

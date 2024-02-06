@@ -14,7 +14,6 @@ use sp_runtime::BoundedVec;
 use starknet_core::types::FieldElement;
 use starknet_crypto::{get_public_key, sign, verify};
 
-// Todo(jaemin): To be removed
 use crate::constants::{sbb, MODULUS};
 use crate::StarknetRpcApiError;
 

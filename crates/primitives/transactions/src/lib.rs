@@ -133,13 +133,16 @@ pub struct InvokeTransactionV1 {
 pub struct EncryptedInvokeTransaction {
     /// Encrypted transaction data.
     pub encrypted_data: Vec<String>,
-    /// Nonce for decrypting the encrypted transaction.
+    /// Nonce for decrypting the poseidon encrypted transaction.
+    /// It is Randomized initial state value used in poseidon permutation operation.
+    /// (decryption requires the random state value used during encryption, different from
+    /// decryption key)
     pub nonce: String,
-    /// t for calculating time-lock puzzle.
+    /// time-lock delay parameter.
     pub t: u64,
-    /// g for calculating time-lock puzzle.
+    /// RSA group generator.
     pub g: String,
-    /// n for calculating time-lock puzzle.
+    /// RSA modulus.
     pub n: String,
 }
 

@@ -588,7 +588,6 @@ where
         }
     }
 
-    // Todo(jaemin): To be removed. This is for testing.
     fn encrypt_invoke_transaction(
         &self,
         invoke_transaction: BroadcastedInvokeTransaction,
