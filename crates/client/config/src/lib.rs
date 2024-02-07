@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::mem::MaybeUninit;
-use std::sync::{Mutex, Once};
+use std::sync::Once;
 
 use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
@@ -51,22 +51,26 @@ pub fn init_config(path: &String) {
 #[derive(Serialize, Deserialize)]
 pub struct DefaultConfig {
     sequencer_private_key: String,
+    sequencer_host: String,
+    rollup_id: u32,
     external_decryptor_hosts: Vec<String>,
     is_validating: bool,
     host: String,
     namespace: String,
-    auth_token: String,
+    da_auth_token: String,
 }
 
 impl Default for DefaultConfig {
     fn default() -> Self {
         DefaultConfig {
             sequencer_private_key: "0x00c1cf1490de1352865301bb8705143f3ef938f97fdf892f1090dcb5ac7bcd1d".to_string(),
+            sequencer_host: "localhost:8001".to_string(),
+            rollup_id: 0,
             external_decryptor_hosts: vec!["localhost:8080".to_string(), "localhost:8081".to_string()],
             is_validating: false,
             host: "".to_string(),
             namespace: "".to_string(),
-            auth_token: "".to_string(),
+            da_auth_token: "".to_string(),
         }
     }
 }
