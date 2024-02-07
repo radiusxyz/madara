@@ -62,7 +62,7 @@ use starknet_core::types::{
     TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
 use starknet_core::utils::get_selector_from_name;
-use utils::{check_message_validity, sign_message, verify_sign};
+use utils::{is_message_valid, sign_message, verify_sign};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::types::RpcEventFilter;
@@ -379,8 +379,6 @@ where
                 let target_block_transaction_pool = if encrypted_transaction_block.is_closed() {
                     let next_block_height = block_height + 1;
 
-                    log::info!("{block_height} is closed.. push on next block transaction pool on {next_block_height}",);
-
                     locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(next_block_height)
                 } else {
                     encrypted_transaction_block
@@ -474,7 +472,6 @@ where
 
             if encrypted_transaction_pool.is_closed() {
                 block_height += 1;
-                log::info!("{} is closed.. push on next block transaction pool on {}", block_height - 1, block_height);
                 encrypted_transaction_pool =
                     locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(block_height);
             }
@@ -615,7 +612,7 @@ where
             }
         };
 
-        if !check_message_validity(invoke_tx_str.as_bytes()) {
+        if !is_message_valid(invoke_tx_str.as_bytes()) {
             log::error!("Invalid invoke transaction");
             return Err(StarknetRpcApiError::InternalServerError.into());
         }

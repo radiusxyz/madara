@@ -477,7 +477,7 @@ where
             // Records the start time of the decryption process
             let start = std::time::SystemTime::now();
             let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
-            log::info!("Decrypt Start in {:?}", since_the_epoch);
+            log::debug!("Decrypt Start in {:?}", since_the_epoch);
 
             // Iterates through each encrypted transaction and processes them
             encrypted_transaction_pool_orders.iter().for_each(|&order| {
@@ -650,7 +650,7 @@ where
         };
 
         info!(
-            "🥷🎁 Prepared block for proposing at {} ({} ms) [hash: {:?}; parent_hash: {}; {extrinsics_summary}",
+            "🎁 Prepared block for proposing at {} ({} ms) [hash: {:?}; parent_hash: {}; {extrinsics_summary}",
             block.header().number(),
             block_took.as_millis(),
             <Block as BlockT>::Hash::from(block.header().hash()),
@@ -688,7 +688,7 @@ where
                     };
 
                     if encrypted_transaction_block.is_provided_decryption_key(order) {
-                        log::info!("Decryption key is already provided. Skip decrypting at order: {order}");
+                        log::debug!("Decryption key is already provided. Skip decrypting at order: {order}");
                         return;
                     }
 
@@ -741,7 +741,7 @@ where
                         return;
                     }
                 };
-                log::info!("Decrypt {order} End in {since_the_epoch:?}");
+                log::debug!("Decrypt {order} End in {since_the_epoch:?}");
 
                 let transaction: UserTransaction = UserTransaction::Invoke(invoke_tx.clone());
 

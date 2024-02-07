@@ -44,10 +44,10 @@ impl Decryptor {
         encrypted_invoke_transaction: EncryptedInvokeTransaction,
         decryption_key: Option<String>,
     ) -> Result<InvokeTransaction> {
-        log::info!("Decrypting encrypted invoke transaction... using internal decryptor");
+        log::debug!("Decrypting encrypted invoke transaction... using internal decryptor");
         let decryption_key = decryption_key.unwrap_or_else(|| {
             // 2. Use naive
-            log::info!("Decryption key is not provided. Using naive decryption key");
+            log::debug!("Decryption key is not provided. Using naive decryption key");
             self.delay_function.evaluate(
                 encrypted_invoke_transaction.t,
                 encrypted_invoke_transaction.g.clone(),
@@ -88,7 +88,7 @@ impl Decryptor {
             })?
             .to_string();
 
-        log::info!(
+        log::debug!(
             "Decrypting encrypted invoke transaction... using external decryptor - host: {}",
             external_decryptor_host
         );

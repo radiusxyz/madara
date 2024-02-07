@@ -19,7 +19,7 @@ use crate::StarknetRpcApiError;
 
 /// Attempts to convert a little-endian byte representation of
 /// a scalar into a `Scalar`, failing if the input is not canonical.
-fn check_bytes_validity(buf: &[u8]) -> bool {
+fn is_bytes_valid(buf: &[u8]) -> bool {
     let mut chunks = buf.chunks_exact(8);
     let mut s = [0u64; 4];
 
@@ -46,18 +46,18 @@ fn check_bytes_validity(buf: &[u8]) -> bool {
 /// in cases where the input is not in canonical form.
 /// This function checks if the provided byte array meets specific conditions
 /// (e.g., being less than a certain modulus value).
-pub fn check_message_validity(message_bytes: &[u8]) -> bool {
+pub fn is_message_valid(message_bytes: &[u8]) -> bool {
     let mut message_vecs: Vec<Vec<u8>> = message_bytes.to_vec().chunks(32).map(|s| s.into()).collect();
 
     for message_vec in message_vecs.iter_mut() {
         message_vec.resize(32, 0);
         let temp = &*message_vec;
-        let message: [u8; 32] = match temp.as_slice().try_into() {
-            Ok(message) => message,
+        let bytes: [u8; 32] = match temp.as_slice().try_into() {
+            Ok(bytes) => bytes,
             _ => return false,
         };
 
-        if !check_bytes_validity(&message) {
+        if !is_bytes_valid(&bytes) {
             return false;
         }
     }
