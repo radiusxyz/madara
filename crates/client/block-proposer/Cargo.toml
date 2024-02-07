@@ -47,6 +47,16 @@ tokio = { workspace = true }
 base64 = { workspace = true }
 dotenv = { workspace = true }
 
+num-bigint = { workspace = true, default-features = false }
+rand = "0.8"
+mc-config = { workspace = true }
+starknet-core = { workspace = true }
+starknet-crypto = { workspace = true, default-features = false, features = [
+  "alloc",
+] }
+mp-hashers = { workspace = true }
+hex = { workspace = true, default-features = true }
+
 [dev-dependencies]
 parking_lot = { workspace = true }
 sc-transaction-pool = { workspace = true }

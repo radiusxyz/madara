@@ -2,8 +2,10 @@
 //! This crate implements the [`sp_consensus::Proposer`] trait.
 //! It is used to build blocks for the block authoring node.
 //! The block authoring node is the node that is responsible for building new blocks.
+use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time;
 
@@ -13,11 +15,16 @@ use futures::future::{Future, FutureExt};
 use futures::{future, select};
 use hyper::{Body, Client, Request, Uri};
 use log::{debug, error, info, trace, warn};
+use mc_config::config_map;
 use mc_transaction_pool::EncryptedTransactionPool;
 use mp_felt::Felt252Wrapper;
+use mp_hashers::pedersen::PedersenHasher;
+use mp_hashers::HasherT;
 use mp_transactions::{InvokeTransaction, InvokeTransactionV1, UserTransaction};
+use num_bigint::{BigInt, RandBigInt};
 use pallet_starknet::runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use prometheus_endpoint::Registry as PrometheusRegistry;
+use rand::rngs::OsRng;
 use sc_block_builder::{BlockBuilderApi, BlockBuilderProvider};
 use sc_client_api::backend;
 use sc_proposer_metrics::{EndProposingReason, MetricsLink as PrometheusMetrics};
@@ -34,8 +41,9 @@ use sp_inherents::InherentData;
 use sp_runtime::generic::BlockId as SPBlockId;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use sp_runtime::{Digest, Percent, SaturatedConversion};
-use starknet_ff::FieldElement;
-use tokio;
+use starknet_core::types::FieldElement;
+use starknet_crypto::{get_public_key, sign};
+use {hex, tokio};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonRequest {
@@ -47,8 +55,15 @@ struct JsonRequest {
 
 #[derive(Deserialize, Debug)]
 struct JsonResponse {
-    result: Vec<String>,
+    jsonrpc: String,
+    result: GetRawTxListResponse,
     id: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetRawTxListResponse {
+    pub is_building_block: bool,
+    pub raw_tx_list: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -439,19 +454,62 @@ where
 
         let client = Client::new();
 
+        // 1. Get sequencer private key
+        let config_map = config_map();
+        let sequencer_private_key =
+            config_map.get_string("sequencer_private_key").expect("sequencer_private_key must be set");
+
+        let sequencer_public_key = get_public_key(&FieldElement::from_str(sequencer_private_key.as_str()).unwrap());
+        println!("stompesi - sequencer_private_key: {:?}", sequencer_private_key);
+        println!("stompesi - sequencer_public_key: {:?}", hex::encode(sequencer_public_key.to_bytes_be()));
+
+        // 2. Make random FieldElement for making k to sign
+        let mut rng = OsRng;
+        let lower_bound = BigInt::from(0);
+        let upper_bound = BigInt::parse_bytes(FieldElement::MAX.to_string().as_bytes(), 10).unwrap();
+        let k: BigInt = rng.gen_bigint_range(&lower_bound, &upper_bound);
+        let k = format!("0x{}", k.to_str_radix(16));
+        let k = FieldElement::from_str(k.as_str()).unwrap();
+
+        let message = format!("{}", block_height);
+
+        println!("stompesi - message: {:?}", message);
+
+        let message = message.as_bytes();
+        let commitment = PedersenHasher::hash_bytes(message);
+
+        let signature =
+            sign(&FieldElement::from_str(sequencer_private_key.as_str()).unwrap(), &FieldElement::from(commitment), &k)
+                .unwrap();
+
         // prepare JSON-RPC request
         let request = JsonRequest {
             jsonrpc: "2.0",
-            method: "get_tx_list",
-            params: json!({"rollup_id":std::env::var("ROLLUP_ID").unwrap_or("Rollup_0".into()), "block_height":block_height}),
+            // method: "get_tx_list",
+            // params: json!({"rollup_id":std::env::var("ROLLUP_ID").unwrap_or("Rollup_0".into()),
+            // "block_height":block_height}),
+            method: "get_raw_tx_list",
+            params: json!({
+              "rollup_id":"1",
+              "block_height":block_height,
+              "operator_signature": {
+                "r": format!("0x{}", hex::encode(signature.r.to_bytes_be())),
+                "s": format!("0x{}", hex::encode(signature.s.to_bytes_be())),
+                "v": format!("0x{}", hex::encode(signature.v.to_bytes_be())),
+              }
+            }),
             id: 1,
         };
 
         let request_str = serde_json::to_string(&request).unwrap();
 
+        println!("stompesi - request_str: {:?}", request_str);
+
         // set server uri
-        let sequencer_host = std::env::var("SEQUENCER_HOST").unwrap_or("http://127.0.0.1:8000".into());
-        let uri = Uri::try_from(sequencer_host).unwrap();
+        // let sequencer_host = std::env::var("SEQUENCER_HOST").unwrap_or("http://127.0.0.1:8000".into());
+        // let uri = Uri::try_from(sequencer_host).unwrap();
+
+        let uri = Uri::from_static("http://127.0.0.1:8001");
 
         // create JSON-RPC request
         let request = Request::post(uri)
@@ -461,17 +519,28 @@ where
 
         // send request, receive response
         let response = client.request(request).await.unwrap();
+        println!("stompesi - response: {:?}", response);
+
         let response_body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        println!("stompesi - response_body: {:?}", response_body);
         // parse response to JSON
         let response: JsonResponse = match serde_json::from_slice(&response_body) {
             Ok(body) => body,
             Err(_) => {
+                println!("stompesi - serde_json error");
                 return Err(sp_blockchain::Error::TransactionPoolNotReady);
             }
         };
 
+        if response.result.is_building_block {
+            println!("stompesi - is_building_block: {:?}", response.result.is_building_block);
+            return Err(sp_blockchain::Error::TransactionPoolNotReady);
+        }
+
+        println!("stompesi - response: {:?}", response);
+
         // print result
-        for serialized_tx in &response.result {
+        for serialized_tx in &response.result.raw_tx_list {
             let invoke_transaction_type: InvokeTransactionV360 = serde_json::from_str(&serialized_tx).unwrap();
 
             let invoke_tx_v1 = InvokeTransactionV1 {
@@ -500,16 +569,21 @@ where
                 .await;
         }
 
-        loop {
-            let tx_cnt = response.result.len();
-            let ready_cnt = self.transaction_pool.status().ready as usize;
-            info!("{} waiting {}:{}", block_height, tx_cnt, ready_cnt);
+        // loop {
+        //     let ready_cnt = self.transaction_pool.status().ready as usize;
 
-            if tx_cnt == ready_cnt {
-                break;
-            }
-            tokio::time::sleep(time::Duration::from_millis(50)).await;
-        }
+        //     // let tx_cnt = response.result.raw_tx_list.len();
+        //     let unique_strings: HashSet<_> = response.result.raw_tx_list.clone().into_iter().collect();
+        //     let tx_cnt = unique_strings.len();
+
+        //     info!("{} waiting {}:{}", block_height, tx_cnt, ready_cnt);
+
+        //     // TODO: check duplicated tx
+        //     if tx_cnt == ready_cnt {
+        //         break;
+        //     }
+        //     tokio::time::sleep(time::Duration::from_millis(50)).await;
+        // }
 
         // proceed with transactions
         // We calculate soft deadline used only in case we start skipping transactions.
