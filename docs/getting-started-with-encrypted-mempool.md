@@ -32,20 +32,19 @@ cargo run --release -- --dev --encrypted-mempool
 
 ### Encrypted Mempool
 
-Madara now includes an encrypted mempool feature, enhancing the security of MEV resistancy and censorship.
-This feature allows transactions to be encrypted before being included to the block, providing an additional layer of security.
+Madara now has an encrypted mempool feature providing censorship /
+MEV resistance through trustless environment where users don’t have to trust sequencers. Sequencers don’t have any knowledge on the contents of transactions until the block is determined, making the process trustless. 
 
 #### Concepts
-Encrypted mempool determines the transaction order and provides the function to decrypt the encrypted transaction using a time-lock puzzle. This approach keeps the transactions conceal, preventing issues like MEV. Additionally, users can simplify the decryption process by providing a decryption key(currently being implemented). Even without the decryption key, it's still possible to decrypt the transaction through additional computations.
+Encrypted mempool determines the transaction order and provides the function to decrypt the encrypted transaction using a time-lock puzzle. As transactions are encrypted, it prevents censorship and MEV attacks. Additionally, users can simplify the decryption process by providing a decryption key(currently being implemented). Even without the decryption key, it's still possible to decrypt the transaction through additional computations.
 
 #### Key Features
-
-- Encrypt Transactions: Encrypts plane transactions before they are broadcasted.(in client-side / for testing)
-- Decrypt and Process: Decrypts encrypted transactions and processes the decrypted transactions.
-- Maintain Transaction Order: Ensures the order of transactions is maintained during encryption and decryption.
+1. Encrypt: Transactions are encrypted with timelock-puzzle before broadcasting
+2. Commit: Sequencer creates order commitment of encrypted transactions
+3. Decrypt: Sequencer solves Timelock puzzle to decrypt transactions
+4. Sequencing: Sequencer builds block as promised in order commitment
 
 #### Encrypted mempool examples
-
 The encrypted mempool introduces three additional APIs
 - starknet_encrypteInvokeTransaction (for testing)
 - starknet_decryptEncryptedInvokeTransaction (for testing)
