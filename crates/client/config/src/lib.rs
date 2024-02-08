@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs;
 use std::mem::MaybeUninit;
 use std::sync::Once;
@@ -52,7 +51,7 @@ pub fn init_config(path: &String) {
 pub struct DefaultConfig {
     sequencer_private_key: String,
     sequencer_host: String,
-    rollup_id: u32,
+    rollup_id: i64,
     external_decryptor_hosts: Vec<String>,
     is_validating: bool,
     da_host: String,

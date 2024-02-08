@@ -490,7 +490,7 @@ where
             // "block_height":block_height}),
             method: "get_raw_tx_list",
             params: json!({
-              "rollup_id": config_map.get_string("rollup_id").expect("rollup id must be set").to_string(),
+              "rollup_id": config_map.get_int("rollup_id").expect("rollup id must be set").to_string(),
               "block_height": block_height,
               "operator_signature": {
                 "r": format!("0x{}", hex::encode(signature.r.to_bytes_be())),
