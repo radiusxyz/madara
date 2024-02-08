@@ -26,11 +26,16 @@ pub fn init_config(path: &String) {
         }
     }
 
-    if !file_exists(&file_path) {
-        // Config file doesn't exist, create it with default values
-        let config = DefaultConfig::default();
-        save_config(&config, &file_path);
-    }
+    if let Ok(contents) = fs::read_to_string(&file_path) {
+        match toml::from_str::<DefaultConfig>(&contents) {
+            Err(_) => {
+                save_config(&DefaultConfig::default(), &file_path);
+            }
+            _ => {}
+        }
+    } else {
+        save_config(&DefaultConfig::default(), &file_path);
+    };
 
     let config: Config = Config::builder()
         .add_source(File::with_name(&file_path))
@@ -51,7 +56,7 @@ pub fn init_config(path: &String) {
 pub struct DefaultConfig {
     sequencer_private_key: String,
     sequencer_host: String,
-    rollup_id: i64,
+    rollup_id: u32,
     external_decryptor_hosts: Vec<String>,
     is_validating: bool,
     da_host: String,
@@ -63,8 +68,8 @@ impl Default for DefaultConfig {
     fn default() -> Self {
         DefaultConfig {
             sequencer_private_key: "0x00c1cf1490de1352865301bb8705143f3ef938f97fdf892f1090dcb5ac7bcd1d".to_string(),
-            sequencer_host: "localhost:8001".to_string(),
-            rollup_id: 0,
+            sequencer_host: "http://localhost:8000".to_string(),
+            rollup_id: 1,
             external_decryptor_hosts: vec!["localhost:8080".to_string(), "localhost:8081".to_string()],
             is_validating: false,
             da_host: "".to_string(),
@@ -77,8 +82,4 @@ impl Default for DefaultConfig {
 fn save_config<T: Serialize>(config: &T, filename: &str) {
     let toml = toml::to_string_pretty(config).expect("Failed to serialize to TOML");
     fs::write(filename, toml).expect("Failed to write to Config.toml");
-}
-
-fn file_exists(filename: &str) -> bool {
-    fs::metadata(filename).is_ok()
 }
