@@ -145,9 +145,9 @@ fn encode_data_to_base64(original: String) -> String {
 
 async fn submit_to_da(data: String) -> Result<String, Box<dyn std::error::Error>> {
     let config_map = config_map();
-    let da_host = config_map.get_string("host").unwrap();
-    let da_namespace = config_map.get_string("namespace").unwrap();
-    let da_auth_token = config_map.get_string("auth_token").unwrap();
+    let da_host = config_map.get_string("da_host").unwrap();
+    let da_namespace = config_map.get_string("da_namespace").unwrap();
+    let da_auth_token = config_map.get_string("da_auth_token").unwrap();
     let da_auth = format!("Bearer {}", da_auth_token);
 
     let encoded_data = encode_data_to_base64(data);
@@ -196,9 +196,9 @@ async fn submit_to_da(data: String) -> Result<String, Box<dyn std::error::Error>
 
 async fn retrieve_from_da(data: String) -> Result<String, Box<dyn std::error::Error>> {
     let config_map = config_map();
-    let da_host = config_map.get_string("host").unwrap();
-    let da_namespace = config_map.get_string("namespace").unwrap();
-    let da_auth_token = config_map.get_string("auth_token").unwrap();
+    let da_host = config_map.get_string("da_host").unwrap();
+    let da_namespace = config_map.get_string("da_namespace").unwrap();
+    let da_auth_token = config_map.get_string("da_auth_token").unwrap();
     let da_auth = format!("Bearer {}", da_auth_token);
 
     let block_height: u64 = data.parse().unwrap();

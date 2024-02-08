@@ -55,8 +55,8 @@ pub struct DefaultConfig {
     rollup_id: u32,
     external_decryptor_hosts: Vec<String>,
     is_validating: bool,
-    host: String,
-    namespace: String,
+    da_host: String,
+    da_namespace: String,
     da_auth_token: String,
 }
 
@@ -68,8 +68,8 @@ impl Default for DefaultConfig {
             rollup_id: 0,
             external_decryptor_hosts: vec!["localhost:8080".to_string(), "localhost:8081".to_string()],
             is_validating: false,
-            host: "".to_string(),
-            namespace: "".to_string(),
+            da_host: "".to_string(),
+            da_namespace: "".to_string(),
             da_auth_token: "".to_string(),
         }
     }
