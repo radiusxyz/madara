@@ -62,7 +62,7 @@ use starknet_core::types::{
     TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
 };
 use starknet_core::utils::get_selector_from_name;
-use utils::{is_message_valid, sign_message, verify_sign};
+use utils::{sign_message, verify_sign};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::types::RpcEventFilter;
@@ -611,11 +611,6 @@ where
                 return Err(StarknetRpcApiError::InternalServerError.into());
             }
         };
-
-        if !is_message_valid(invoke_tx_str.as_bytes()) {
-            log::error!("Invalid invoke transaction");
-            return Err(StarknetRpcApiError::InternalServerError.into());
-        }
 
         let encryption_key = SequencerPoseidonEncryption::calculate_secret_key(y.as_bytes());
         let (encrypted_data, nonce, _, _) = SequencerPoseidonEncryption::new().encrypt(invoke_tx_str, encryption_key);
