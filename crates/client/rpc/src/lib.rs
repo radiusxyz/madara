@@ -394,33 +394,35 @@ where
 
         let extrinsic = convert_tx_to_extrinsic(self.client.clone(), best_block_hash, transaction.clone()).await?;
 
-        {
+        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+
+        let order = {
             let encrypted_mempool = self.pool.encrypted_mempool().clone();
             let mut locked_encrypted_mempool = encrypted_mempool.lock().await;
 
             if !locked_encrypted_mempool.is_using_encrypted_mempool() {
                 submit_extrinsic(self.pool.clone(), best_block_hash, extrinsic).await?;
-            } else {
-                let block_height = self.current_block_number()?;
-                let encrypted_transaction_block =
-                    locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(block_height);
 
-                // If the block_transaction_pool is closed, the order should get from next block_transaction_pool
-                let target_block_transaction_pool = if encrypted_transaction_block.is_closed() {
-                    let next_block_height = block_height + 1;
-
-                    locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(next_block_height)
-                } else {
-                    encrypted_transaction_block
-                };
-
-                let order = target_block_transaction_pool.increase_raw_tx_count() - 1;
-
-                submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
+                return Ok(InvokeTransactionResult {
+                    transaction_hash: transaction.compute_hash::<H>(chain_id, false).into(),
+                });
             }
-        }
 
-        let chain_id = Felt252Wrapper(self.chain_id()?.0);
+            let mut block_height = self.current_block_number()?;
+            let mut block_transaction_pool =
+                locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(block_height);
+
+            // If the block_transaction_pool is closed, the order should get from next block_transaction_pool
+            while block_transaction_pool.is_closed() {
+                block_height += 1;
+                block_transaction_pool =
+                    locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(block_height);
+            }
+
+            block_transaction_pool.increase_raw_tx_count() - 1
+        };
+
+        submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
 
         Ok(InvokeTransactionResult { transaction_hash: transaction.compute_hash::<H>(chain_id, false).into() })
     }
@@ -497,16 +499,17 @@ where
                 return Err(StarknetRpcApiError::EncryptedMempoolDisabled.into());
             }
 
-            let mut encrypted_transaction_pool =
+            let mut block_transaction_pool =
                 locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(block_height);
 
-            if encrypted_transaction_pool.is_closed() {
+            // If the block_transaction_pool is closed, the order should get from next block_transaction_pool
+            while block_transaction_pool.is_closed() {
                 block_height += 1;
-                encrypted_transaction_pool =
+                block_transaction_pool =
                     locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(block_height);
             }
 
-            encrypted_transaction_pool.add_encrypted_invoke_tx(encrypted_invoke_transaction.clone())
+            block_transaction_pool.add_encrypted_invoke_tx(encrypted_invoke_transaction.clone())
         };
 
         let encrypted_invoke_transaction_string = serde_json::to_string(&encrypted_invoke_transaction)?;

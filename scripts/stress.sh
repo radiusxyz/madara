@@ -55,5 +55,4 @@ EOF
     ADD_RESPONSE=$(curl -s -H "Content-Type: application/json" -X POST --data "$ADD_ENCRYPTED_DATA" $URL)
     echo "Add encrypted transaction response: $ADD_RESPONSE"
 
-    sleep 0.01
 done
