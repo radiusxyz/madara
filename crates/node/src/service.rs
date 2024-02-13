@@ -14,10 +14,6 @@ use madara_runtime::{self, Hash, RuntimeApi, SealingMode, StarknetHasher};
 use mc_block_proposer::ProposerFactory;
 use mc_commitment_state_diff::CommitmentStateDiffWorker;
 use mc_config::config_map;
-#[cfg(feature = "avail")]
-use mc_data_availability::avail::{config::AvailConfig, AvailClient};
-#[cfg(feature = "celestia")]
-use mc_data_availability::celestia::{config::CelestiaConfig, CelestiaClient};
 use mc_data_availability::ethereum::config::EthereumConfig;
 use mc_data_availability::{DaClient, DataAvailabilityWorker};
 use mc_genesis_data_provider::OnDiskGenesisConfig;
@@ -462,7 +458,9 @@ pub fn new_full(
     if let Some((layer_kind, config_path)) = settlement_config {
         let settlement_provider: Box<dyn SettlementProvider<_>> = match layer_kind {
             SettlementLayer::Ethereum => {
-                let ethereum_conf = EthereumConfig::try_from(&config_path)?;
+                let file = std::fs::File::open(config_path)?;
+                let ethereum_conf: EthereumConfig =
+                    serde_json::from_reader(file).map_err(|e| ServiceError::Other(e.to_string()))?;
                 Box::new(
                     StarknetContractClient::try_from(ethereum_conf).map_err(|e| ServiceError::Other(e.to_string()))?,
                 )
