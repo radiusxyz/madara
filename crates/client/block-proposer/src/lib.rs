@@ -432,7 +432,7 @@ where
                 let tx_cnt = block_encrypted_transaction_pool.get_tx_cnt();
                 let dec_cnt = block_encrypted_transaction_pool.get_submitted_tx_count();
                 let ready_cnt = self.transaction_pool.status().ready as u64;
-                log::info!(
+                log::debug!(
                     "block height: {}, current order: {}, (tx count:submitted tx count:ready count) = ({}:{}:{})",
                     block_height,
                     order,
