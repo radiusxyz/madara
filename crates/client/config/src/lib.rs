@@ -28,10 +28,8 @@ pub fn init_config(path: &String) {
 
     if let Ok(contents) = fs::read_to_string(&file_path) {
         match toml::from_str::<DefaultConfig>(&contents) {
-            Err(_) => {
-                save_config(&DefaultConfig::default(), &file_path);
-            }
-            _ => {}
+            Ok(_) => {}
+            Err(_) => save_config(&DefaultConfig::default(), &file_path),
         }
     } else {
         save_config(&DefaultConfig::default(), &file_path);
@@ -56,7 +54,7 @@ pub fn init_config(path: &String) {
 pub struct DefaultConfig {
     sequencer_private_key: String,
     sequencer_host: String,
-    rollup_id: u32,
+    rollup_id: String,
     external_decryptor_hosts: Vec<String>,
     is_validating: bool,
     da_host: String,
@@ -69,7 +67,7 @@ impl Default for DefaultConfig {
         DefaultConfig {
             sequencer_private_key: "0x00c1cf1490de1352865301bb8705143f3ef938f97fdf892f1090dcb5ac7bcd1d".to_string(),
             sequencer_host: "http://localhost:8000".to_string(),
-            rollup_id: 1,
+            rollup_id: "1".to_string(),
             external_decryptor_hosts: vec!["localhost:8080".to_string(), "localhost:8081".to_string()],
             is_validating: false,
             da_host: "".to_string(),
