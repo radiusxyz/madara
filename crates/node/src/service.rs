@@ -45,7 +45,6 @@ use sp_runtime::traits::BlakeTwo256;
 use sp_trie::PrefixedMemoryDB;
 
 use crate::cli::Cli;
-use crate::commands::Sealing;
 use crate::genesis_block::MadaraGenesisBlockBuilder;
 use crate::rpc::StarknetDeps;
 use crate::starknet::{db_config_dir, MadaraBackend};
@@ -288,7 +287,7 @@ pub fn new_full(
         other: (block_import, grandpa_link, mut telemetry, madara_backend),
     } = new_partial(&config, &cli, build_import_queue, cache_more_things)?;
     let config_map = config_map();
-    if config_map.get_bool("is_validating").unwrap() == true {
+    if config_map.get_bool("is_validating").unwrap() {
         task_manager.spawn_essential_handle().spawn("sync-DA", Some("sync-DA"), sync_with_da());
     }
 

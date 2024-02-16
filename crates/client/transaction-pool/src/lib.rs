@@ -69,6 +69,8 @@ type ReadyIteratorFor<PoolApi> = BoxedReadyIterator<graph::ExtrinsicHash<PoolApi
 
 type PolledIterator<PoolApi> = Pin<Box<dyn Future<Output = ReadyIteratorFor<PoolApi>> + Send>>;
 
+type TxHashResults<TxPool, E> = Vec<Result<TxHash<TxPool>, E>>;
+
 /// A transaction pool for a full node.
 pub type FullPool<Block, Client> = BasicPool<FullChainApi<Client, Block>, Block>;
 
@@ -261,7 +263,7 @@ pub trait EncryptedTransactionPool: TransactionPool {
         source: TransactionSource,
         xts: Vec<TransactionFor<Self>>,
         order: Option<u64>,
-    ) -> PoolFuture<Vec<Result<TxHash<Self>, Self::Error>>, Self::Error>;
+    ) -> PoolFuture<TxHashResults<Self, Self::Error>, Self::Error>;
 
     /// encrypted_pool
     fn encrypted_pool(&self) -> Arc<TokioMutex<EncryptedPool>>;

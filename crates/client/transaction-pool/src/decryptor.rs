@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use encryptor::SequencerPoseidonEncryption;
 use jsonrpsee::core::client::ClientT;
 use jsonrpsee::core::params::ObjectParams;
-use jsonrpsee::rpc_params;
 use jsonrpsee::ws_client::WsClientBuilder;
 use mc_config::config_map;
 use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction};
@@ -16,6 +15,10 @@ use vdf::VDF;
 
 static CURRENT_INDEX: AtomicUsize = AtomicUsize::new(0);
 
+/// `Decryptor` is a structure that holds the decryption and delay functions.
+/// It is used to decrypt encrypted invoke transactions using the Poseidon algorithm.
+/// The decryption process involves a delay function to calculate the decryption key.
+/// This structure is also capable of delegating the decryption process to an external decryptor.
 #[derive(Clone)]
 pub struct Decryptor {
     decrypt_function: SequencerPoseidonEncryption,
@@ -63,7 +66,7 @@ impl Decryptor {
         let decrypted_invoke_tx = String::from_utf8(decrypted_invoke_tx).unwrap();
         let decrypted_invoke_tx = decrypted_invoke_tx.trim_end_matches('\0');
 
-        serde_json::from_str::<InvokeTransaction>(&decrypted_invoke_tx).unwrap()
+        serde_json::from_str::<InvokeTransaction>(decrypted_invoke_tx).unwrap()
     }
 
     /// Delegate to decrypt encrypted invoke transaction

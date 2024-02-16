@@ -9,7 +9,6 @@ use lazy_static::lazy_static;
 use mc_config::config_map;
 use rocksdb::{Error, IteratorMode, DB};
 use serde_json::{json, Value};
-use tokio;
 use tokio::time::{sleep, Duration};
 
 // Import Lazy from the lazy_static crate
@@ -23,7 +22,7 @@ impl SyncDB {
     // Constructor to open the database.
     fn open() -> Result<SyncDB, Error> {
         let path = Path::new("epool");
-        let db = DB::open_default(&path)?;
+        let db = DB::open_default(path)?;
         Ok(SyncDB { db })
     }
 
@@ -48,9 +47,8 @@ impl SyncDB {
             Some(val) => val,
             None => Vec::new(),
         };
-        let value = String::from_utf8(value_vec).unwrap();
 
-        value
+        String::from_utf8(value_vec).unwrap()
     }
 
     // Method to perform a write operation.
@@ -112,7 +110,8 @@ impl SyncDB {
         let value_vec = iter.next().unwrap().unwrap().1.into_vec();
         let key = String::from_utf8(key_vec).unwrap();
         let value = String::from_utf8(value_vec).unwrap();
-        return (key, value);
+
+        (key, value)
     }
 }
 
@@ -139,7 +138,7 @@ fn encode_data_to_base64(original: String) -> String {
     // Convert string to bytes
     let bytes = original.as_bytes();
     // Convert bytes to base64
-    let base64_str: String = general_purpose::STANDARD.encode(&bytes);
+    let base64_str: String = general_purpose::STANDARD.encode(bytes);
     base64_str
 }
 

@@ -63,20 +63,19 @@ impl Txs {
 
     /// increase not encrypted count
     pub fn increase_not_encrypted_cnt(&mut self) -> u64 {
-        self.not_encrypted_cnt = self.not_encrypted_cnt + 1;
-        // println!("{}", self.not_encrypted_cnt);
+        self.not_encrypted_cnt += 1;
         self.increase_order();
         self.not_encrypted_cnt
     }
 
     /// len
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
-        self.encrypted_pool.values().collect::<Vec<_>>().len()
+        self.encrypted_pool.values().len()
     }
 
     /// is close
     pub fn is_closed(&self) -> bool {
-        // println!("is closed {}", self.closed);
         self.closed
     }
 
@@ -113,7 +112,7 @@ impl Txs {
     /// not only for set new encrypted tx
     /// but also for declare tx, deploy account tx
     pub fn increase_order(&mut self) -> u64 {
-        self.order = self.order + 1;
+        self.order += 1;
         self.order
     }
 
@@ -125,20 +124,17 @@ impl Txs {
     /// get encrypted tx count
     /// it's not order
     pub fn get_tx_cnt(&self) -> u64 {
-        // println!("{}, {}", self.encrypted_pool.len() as u64, self.not_encrypted_cnt);
-        let tmp = self.encrypted_pool.len() as u64 + self.not_encrypted_cnt;
-        tmp
+        self.encrypted_pool.len() as u64 + self.not_encrypted_cnt
     }
 
     /// increase decrypted tx count
     pub fn increase_decrypted_cnt(&mut self) -> u64 {
-        self.decrypted_cnt = self.decrypted_cnt + 1;
+        self.decrypted_cnt += 1;
         self.decrypted_cnt
     }
 
     /// get decrypted tx count
     pub fn get_decrypted_cnt(&self) -> u64 {
-        // println!("{}, {}", self.decrypted_cnt as u64, self.not_encrypted_cnt);
         self.decrypted_cnt + self.not_encrypted_cnt
     }
 
@@ -150,7 +146,7 @@ impl Txs {
     /// get key received information
     pub fn get_key_received(&self, order: u64) -> bool {
         match self.key_received.get(&order) {
-            Some(received) => received.clone(),
+            Some(received) => *received,
             None => false,
         }
     }
@@ -212,10 +208,7 @@ impl EncryptedPool {
 
     /// txs exist
     pub fn exist(&self, block_height: u64) -> bool {
-        match self.txs.get(&block_height) {
-            Some(_) => true,
-            None => false,
-        }
+        self.txs.get(&block_height).is_some()
     }
 
     /// get txs
@@ -232,7 +225,7 @@ impl EncryptedPool {
             Some(txs) => {
                 let raw_txs: Vec<_> = txs.encrypted_pool.values().cloned().collect();
                 println!("raw_txs: {:?}", raw_txs);
-                if raw_txs.len() != 0 {
+                if !raw_txs.is_empty() {
                     let txs_string = serde_json::to_string(&raw_txs).expect("serde_json failed to serialize txs");
                     SYNC_DB.write("sync_target".to_string(), block_height.to_string());
                     SYNC_DB.write(block_height.to_string(), txs_string);

@@ -32,9 +32,7 @@ use mp_hashers::pedersen::PedersenHasher;
 use mp_hashers::HasherT;
 use mp_transactions::compute_hash::ComputeTransactionHash;
 use mp_transactions::to_starknet_core_transaction::to_starknet_core_tx;
-use mp_transactions::{
-    EncryptedInvokeTransaction, InvokeTransaction, InvokeTransactionV1, Transaction as MPTransaction, UserTransaction,
-};
+use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction, UserTransaction};
 use num_bigint::{BigInt, RandBigInt};
 use pallet_starknet::runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use rand::rngs::OsRng;
@@ -1315,7 +1313,7 @@ where
         )
         .unwrap();
 
-        if verified == false {
+        if !verified {
             error!(
                 "Invalid signature (block number: {}, order: {})",
                 decryption_info.block_number, decryption_info.order
@@ -1346,6 +1344,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 async fn submit_extrinsic<P, B>(
     pool: Arc<P>,
     best_block_hash: <B as BlockT>::Hash,
