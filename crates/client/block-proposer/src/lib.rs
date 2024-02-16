@@ -504,9 +504,16 @@ where
             })?;
 
         // send request, receive response
-        let response = client.request(request).await.unwrap();
+        let response = client.request(request).await.map_err(|e| {
+            error!(target: LOG_TARGET, "Failed to send request: {:?}", e);
+            sp_blockchain::Error::TransactionPoolNotReady
+        })?;
 
-        let response_body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        let response_body = hyper::body::to_bytes(response.into_body()).await.map_err(|e| {
+            error!(target: LOG_TARGET, "Failed to read response: {:?}", e);
+            sp_blockchain::Error::TransactionPoolNotReady
+        })?;
+
         // parse response to JSON
         let response: JsonResponse = match serde_json::from_slice(&response_body) {
             Ok(body) => body,
