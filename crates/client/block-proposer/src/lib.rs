@@ -498,7 +498,10 @@ where
         let request = Request::post(uri)
             .header("content-type", "application/json")
             .body(Body::from(request_str.clone()))
-            .unwrap();
+            .map_err(|e| {
+                error!(target: LOG_TARGET, "Failed to create request: {:?}", e);
+                sp_blockchain::Error::TransactionPoolNotReady
+            })?;
 
         // send request, receive response
         let response = client.request(request).await.unwrap();
