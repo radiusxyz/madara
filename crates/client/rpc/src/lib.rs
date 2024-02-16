@@ -419,7 +419,7 @@ where
                     locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(block_height);
             }
 
-            block_transaction_pool.increase_raw_tx_count() - 1
+            block_transaction_pool.increase_order() - 1
         };
 
         submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;

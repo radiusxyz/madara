@@ -70,6 +70,12 @@ impl BlockEncryptedTransactionPool {
         self.raw_tx_count
     }
 
+    /// increase order
+    pub fn increase_order(&mut self) -> u64 {
+        self.order += 1;
+        self.order
+    }
+
     /// encrypted txs orders
     pub fn encrypted_transaction_pool_orders(&self) -> impl Iterator<Item = &u64> {
         self.encrypted_transaction_pool.keys()

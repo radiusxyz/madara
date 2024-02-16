@@ -752,7 +752,7 @@ where
                 };
 
                 match submit_extrinsic_with_order(pool, best_block_hash, extrinsic, order).await {
-                    Ok(_hash) => log::info!("Successfully submitted extrinsic"),
+                    Ok(_hash) => log::debug!("Successfully submitted extrinsic"),
                     Err(e) => log::error!("Failed to submit extrinsic: {e:?}"),
                 }
             }),
