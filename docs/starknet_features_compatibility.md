@@ -56,6 +56,15 @@
 | starknet_addDeclareTransaction           | :white_check_mark: |
 | starknet_addDeployAccountTransaction     | :white_check_mark: |
 
+## Encrypted_mempool(RPC)
+
+| Feature                                    | State              |
+| ------------------------------------------ | ------------------ |
+| starknet_encryptInvokeTransaction          | :white_check_mark: |
+| starknet_decryptEncryptedInvokeTransaction | :white_check_mark: |
+| starknet_addEncryptedInvokeTransaction     | :white_check_mark: |
+| starknet_provideDecryptionKey              | :construction:     |
+
 ## Decentralisation
 
 | Feature                                | State              |
