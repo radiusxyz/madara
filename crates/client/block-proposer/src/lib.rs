@@ -2,7 +2,6 @@
 //! This crate implements the [`sp_consensus::Proposer`] trait.
 //! It is used to build blocks for the block authoring node.
 //! The block authoring node is the node that is responsible for building new blocks.
-use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::str::FromStr;
@@ -42,8 +41,7 @@ use sp_runtime::generic::BlockId as SPBlockId;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use sp_runtime::{Digest, Percent, SaturatedConversion};
 use starknet_core::types::FieldElement;
-use starknet_crypto::{get_public_key, sign};
-use {hex, tokio};
+use starknet_crypto::sign;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonRequest {
@@ -53,6 +51,7 @@ struct JsonRequest {
     id: i32,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 struct JsonResponse {
     jsonrpc: String,
@@ -449,8 +448,7 @@ where
         deadline: time::Instant,
         block_size_limit: Option<usize>,
     ) -> Result<EndProposingReason, sp_blockchain::Error> {
-        // let epool = self.transaction_pool.encrypted_pool().clone();
-        let block_height = self.parent_number.to_string().parse::<u64>().unwrap();
+        let block_height = self.parent_number.to_string().parse::<u64>().unwrap() + 1;
 
         let client = Client::new();
 
@@ -458,10 +456,6 @@ where
         let config_map = config_map();
         let sequencer_private_key =
             config_map.get_string("sequencer_private_key").expect("sequencer_private_key must be set");
-
-        let sequencer_public_key = get_public_key(&FieldElement::from_str(sequencer_private_key.as_str()).unwrap());
-        println!("stompesi - sequencer_private_key: {:?}", sequencer_private_key);
-        println!("stompesi - sequencer_public_key: {:?}", hex::encode(sequencer_public_key.to_bytes_be()));
 
         // 2. Make random FieldElement for making k to sign
         let mut rng = OsRng;
@@ -473,8 +467,6 @@ where
 
         let message = format!("{}", block_height);
 
-        println!("stompesi - message: {:?}", message);
-
         let message = message.as_bytes();
         let commitment = PedersenHasher::hash_bytes(message);
 
@@ -485,9 +477,6 @@ where
         // prepare JSON-RPC request
         let request = JsonRequest {
             jsonrpc: "2.0",
-            // method: "get_tx_list",
-            // params: json!({"rollup_id":std::env::var("ROLLUP_ID").unwrap_or("Rollup_0".into()),
-            // "block_height":block_height}),
             method: "get_raw_tx_list",
             params: json!({
               "rollup_id": config_map.get_string("rollup_id").expect("rollup id must be set").to_string(),
@@ -503,12 +492,6 @@ where
 
         let request_str = serde_json::to_string(&request).unwrap();
 
-        println!("stompesi - request_str: {:?}", request_str);
-
-        // set server uri
-        // let sequencer_host = std::env::var("SEQUENCER_HOST").unwrap_or("http://127.0.0.1:8000".into());
-        // let uri = Uri::try_from(sequencer_host).unwrap();
-
         let uri = Uri::try_from(config_map.get_string("sequencer_host").expect("sequencer host must be set")).unwrap();
 
         // create JSON-RPC request
@@ -519,36 +502,30 @@ where
 
         // send request, receive response
         let response = client.request(request).await.unwrap();
-        println!("stompesi - response: {:?}", response);
 
         let response_body = hyper::body::to_bytes(response.into_body()).await.unwrap();
-        println!("stompesi - response_body: {:?}", response_body);
         // parse response to JSON
         let response: JsonResponse = match serde_json::from_slice(&response_body) {
             Ok(body) => body,
             Err(_) => {
-                println!("stompesi - serde_json error");
                 return Err(sp_blockchain::Error::TransactionPoolNotReady);
             }
         };
 
         if response.result.is_building_block {
-            println!("stompesi - is_building_block: {:?}", response.result.is_building_block);
             return Err(sp_blockchain::Error::TransactionPoolNotReady);
         }
 
-        println!("stompesi - response: {:?}", response);
-
         // print result
         for serialized_tx in &response.result.raw_tx_list {
-            let invoke_transaction_type: InvokeTransactionV360 = serde_json::from_str(&serialized_tx).unwrap();
+            let invoke_transaction_type: InvokeTransactionV360 = serde_json::from_str(serialized_tx).unwrap();
 
             let invoke_tx_v1 = InvokeTransactionV1 {
                 max_fee: invoke_transaction_type.max_fee.to_string().parse().unwrap(),
-                signature: invoke_transaction_type.signature.into_iter().map(|a| Felt252Wrapper(a)).collect(),
+                signature: invoke_transaction_type.signature.into_iter().map(Felt252Wrapper).collect(),
                 nonce: Felt252Wrapper(invoke_transaction_type.nonce),
                 sender_address: Felt252Wrapper(invoke_transaction_type.sender_address),
-                calldata: invoke_transaction_type.calldata.into_iter().map(|a| Felt252Wrapper(a)).collect(),
+                calldata: invoke_transaction_type.calldata.into_iter().map(Felt252Wrapper).collect(),
             };
             let transaction: UserTransaction = UserTransaction::Invoke(InvokeTransaction::V1(invoke_tx_v1));
 
@@ -568,22 +545,6 @@ where
                 .submit_one_with_order(&SPBlockId::hash(best_block_hash), TransactionSource::External, extrinsic, order)
                 .await;
         }
-
-        // loop {
-        //     let ready_cnt = self.transaction_pool.status().ready as usize;
-
-        //     // let tx_cnt = response.result.raw_tx_list.len();
-        //     let unique_strings: HashSet<_> = response.result.raw_tx_list.clone().into_iter().collect();
-        //     let tx_cnt = unique_strings.len();
-
-        //     info!("{} waiting {}:{}", block_height, tx_cnt, ready_cnt);
-
-        //     // TODO: check duplicated tx
-        //     if tx_cnt == ready_cnt {
-        //         break;
-        //     }
-        //     tokio::time::sleep(time::Duration::from_millis(50)).await;
-        // }
 
         // proceed with transactions
         // We calculate soft deadline used only in case we start skipping transactions.
