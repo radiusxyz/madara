@@ -63,6 +63,7 @@ struct JsonResponse {
 pub struct GetRawTxListResponse {
     pub is_building_block: bool,
     pub raw_tx_list: Vec<String>,
+    pub is_simulation: Vec<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -314,7 +315,8 @@ where
     C: BlockBuilderProvider<B, Block, C> + HeaderBackend<Block> + ProvideRuntimeApi<Block> + Send + Sync + 'static,
     C::Api: ApiExt<Block, StateBackend = backend::StateBackendFor<B, Block>>
         + BlockBuilderApi<Block>
-        + ConvertTransactionRuntimeApi<Block>,
+        + ConvertTransactionRuntimeApi<Block>
+        + StarknetRuntimeApi<Block>,
     PR: ProofRecording,
 {
     /// Propose a new block.
@@ -527,7 +529,7 @@ where
         }
 
         // print result
-        for serialized_tx in &response.result.raw_tx_list {
+        for (serialized_tx, is_simulation) in response.result.raw_tx_list.iter().zip(response.result.is_simulation) {
             let invoke_transaction_type: InvokeTransactionV360 = serde_json::from_str(serialized_tx).unwrap();
 
             let invoke_tx_v1 = InvokeTransactionV1 {
@@ -543,17 +545,47 @@ where
 
             let best_block_hash = self.client.info().best_hash;
 
-            let extrinsic = self
-                .client
-                .runtime_api()
-                .convert_transaction(best_block_hash, transaction)
-                .expect("convert_transaction")
-                .expect("runtime_api");
-            let _ = self
-                .transaction_pool
-                .clone()
-                .submit_one_with_order(&SPBlockId::hash(best_block_hash), TransactionSource::External, extrinsic, order)
-                .await;
+            if is_simulation {
+                println!("Estimating fee for transaction.");
+                match self.client.runtime_api().estimate_fee(best_block_hash, transaction) {
+                    Ok(fee) => match fee {
+                        Ok((fee, gas)) => {
+                            println!("Estimated fee: {:?}, gas: {:?}", fee, gas);
+                        }
+                        Err(error) => {
+                            println!("Failed to estimate fee: {error:?}");
+                        }
+                    },
+                    Err(error) => {
+                        println!("Failed to estimate fee: {error:?}");
+                    }
+                }
+            } else {
+                let extrinsic = self
+                    .client
+                    .runtime_api()
+                    .convert_transaction(best_block_hash, transaction)
+                    .expect("convert_transaction")
+                    .expect("runtime_api");
+                match self
+                    .transaction_pool
+                    .clone()
+                    .submit_one_with_order(
+                        &SPBlockId::hash(best_block_hash),
+                        TransactionSource::External,
+                        extrinsic,
+                        order,
+                    )
+                    .await
+                {
+                    Ok(tx_hash) => {
+                        println!("Transaction added to the pool. tx hash: {tx_hash:?}");
+                    }
+                    Err(error) => {
+                        println!("Transaction submission failed: {error:?}");
+                    }
+                }
+            }
         }
 
         // proceed with transactions
