@@ -26,15 +26,16 @@ use std::sync::Arc;
 use std::time;
 use std::time::{Duration, UNIX_EPOCH};
 
+use blockifier::transaction::account_transaction::AccountTransaction;
+use blockifier::transaction::transactions::InvokeTransaction;
 use codec::Encode;
 use futures::channel::oneshot;
 use futures::future::{Future, FutureExt};
 use futures::{future, select};
 use log::{debug, error, info, trace, warn};
 use mc_rpc::submit_extrinsic_with_order;
-use mc_transaction_pool::decryptor::Decryptor;
+use mc_transaction_pool::decryptor::{Decryptor, EncryptorInvokeTransaction};
 use mc_transaction_pool::EncryptedTransactionPool;
-use mp_transactions::{InvokeTransaction, UserTransaction};
 use pallet_starknet_runtime_api::{ConvertTransactionRuntimeApi, StarknetRuntimeApi};
 use prometheus_endpoint::Registry as PrometheusRegistry;
 use sc_block_builder::{BlockBuilderApi, BlockBuilderProvider};
@@ -704,13 +705,13 @@ where
                 };
 
                 let decryptor = Decryptor::default();
-                let invoke_tx_result: Result<InvokeTransaction, _> = if using_external_decryptor {
+                let invoke_tx_result: Result<EncryptorInvokeTransaction, _> = if using_external_decryptor {
                     decryptor.delegate_to_decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction).await
                 } else {
                     decryptor.decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, None).await
                 };
 
-                let invoke_tx = match invoke_tx_result {
+                let decrypted_invoke_tx = match invoke_tx_result {
                     Ok(tx) => tx,
                     Err(e) => {
                         // Should conduct an integrity check in advance to avoid wasting resources on decrypting invalid
@@ -743,9 +744,9 @@ where
                 };
                 log::debug!("Decrypt {order} End in {since_the_epoch:?}");
 
-                let transaction: UserTransaction = UserTransaction::Invoke(invoke_tx.clone());
+                let transaction = AccountTransaction::Invoke(InvokeTransaction::from(decrypted_invoke_tx));
 
-                let Ok(extrinsic) = client.runtime_api().convert_transaction(best_block_hash, transaction.clone())
+                let Ok(extrinsic) = client.runtime_api().convert_account_transaction(best_block_hash, transaction)
                 else {
                     log::error!("Failed to convert transaction to extrinsic.");
                     return;

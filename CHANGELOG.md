@@ -2,12 +2,66 @@
 
 ## Next release
 
+- feat: actual estimate_fee added, brought back l1 messages and refactored
+  simulate tx
+- dev: impl get_state_updates using get_transaction_re_execution_state_diff
+- feat: support strk as fee token
+- dev: pallet test for estimate_fee that skip validation
+- feat: add versioned constants to pallet constants
+- bug: fix contract serialisation
+- fix: starknet_call errs if contract nonexistent
+- fix: txn hash calculation and refactor
+- chore: remove all da/settlement related code
+- fix: re-execute txs instead of simulating for txn receipts
+- chore: rebase on latest blockifier
+- refactoring : Removed Redundant logs in madara
+- fix: transaction receipt fails for txs in the middle of a block
+- chore: add makefile for developer experience improvements and cleanup
+- fix: fix cargo-lint issues
+- feat: added chain-id to the GenesisConfig in pallet-starknet
+- fix(node): fix genesis hash inconsistency
+- feat (pallet): add tests for storage reversal on transaction revert
+- feat: add prometheus metrics for mapping worker
+- Fix(node): Fix creating a local testnet with multiple nodes fails using only
+  cli flags
+- dev: change `Vec::new` to `Vec::with_capacity` where possible.
+- chore(rpc): clean trace api
+- feat(rpc): added state diff real value in trace api
+- chore: update cairo-vm commit and update gas per op
+- refactor(rpc): use single arc instance of starknet rpc
+- build: remove patch on `ring-vrf` dependecy
+- ci: use `production` profile binary in the workflows
+- feat(rpc): support for pending state
+- test(rpc): disable state_diff tests
+- feat(rpc): add tests for estimateMessageFee RPC call
+- refacto: rename braavos call aggregator contract
+- fix: updating outdated links to external resources in documentation
+- feat(client/data-availability): implement custom error handling
+- fix: get_block_by_block_hash then default rather than error
+- feat(rpc): added `get_state_update` real values from DA db
+- feat: add transparent representation to `Felt252Wrapper`
+- feat(rpc/trace_api): add `trace_block_transaction`
+- chore(db): changed the way hashes are encoded
+- refacto: reusable Eth client config for settlement/DA/other tasks
+- ci: add gomu gomu no gatling perfomrance test
+- feat(runtime): moved StarkEvents from Substrate events to runtime storage
+- feat(node): validate declare txs against local Sierra class in block import
+  queue
+- feat(runtime): moved StarkEvents from Substrate
+- feat(rpc/trace_api): add `trace_transaction`
+- fix(docker): fix dockerfile for `madara-node`
+- feat: Remove generic hasher from block hash computation
+- refacto: git submodules removed
+- test: Add pallet test for transaction declare V0
+
 ## v0.7.0
 
+- fix: fixing build breakage for celestia/avail
 - chore: release v0.7.0
 - refacto: remove abusive `TryInto` impl
 - dev: optimize tx trace creation
 - dev: make Madara std compatible
+- dev: check that class exist before using it in BuildGenesisConfig
 - CI: fix taplo version
 - chore: add cache usage for `getEvents` and `getTransactionReceipt`
 - fix: cairo1 contracts should be identified by their sierra class hash
@@ -281,3 +335,5 @@
 - dev: Get the block status from the actual block in get_block_with_tx_hashes
 - fix: l1-l2 messaging
 - dev : clean contracts and compiled files
+- fix: add from_address in calldata of l1 message
+- test: add starkgate related testcase

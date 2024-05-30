@@ -1,27 +1,24 @@
 #![feature(assert_matches)]
 
-extern crate starknet_rpc_test;
-
 use std::assert_matches::assert_matches;
 
 use anyhow::anyhow;
 use rstest::rstest;
 use starknet_accounts::Account;
 use starknet_core::types::{
-    BlockId, BlockStatus, BlockTag, DeclareTransaction, InvokeTransaction, MaybePendingBlockWithTxs, StarknetError,
-    Transaction as StarknetTransaction,
+    BlockId, BlockStatus, BlockTag, DeclareTransaction, DeployAccountTransaction, InvokeTransaction,
+    MaybePendingBlockWithTxs, StarknetError, Transaction as StarknetTransaction,
 };
 use starknet_core::utils::get_selector_from_name;
 use starknet_ff::FieldElement;
-use starknet_providers::{MaybeUnknownErrorCode, Provider, ProviderError, StarknetErrorWithMessage};
-use starknet_rpc_test::constants::{
-    ARGENT_CONTRACT_ADDRESS, CAIRO_1_ACCOUNT_CONTRACT_CLASS_HASH, FEE_TOKEN_ADDRESS, MAX_FEE_OVERRIDE, SIGNER_PRIVATE,
-};
-use starknet_rpc_test::fixtures::{madara, ThreadSafeMadaraClient};
-use starknet_rpc_test::utils::{
+use starknet_providers::{Provider, ProviderError};
+use starknet_rpc_test::constants::{ARGENT_CONTRACT_ADDRESS, CAIRO_1_ACCOUNT_CONTRACT_CLASS_HASH, SIGNER_PRIVATE};
+use starknet_test_utils::constants::{ETH_FEE_TOKEN_ADDRESS, MAX_FEE_OVERRIDE};
+use starknet_test_utils::fixtures::{madara, ThreadSafeMadaraClient};
+use starknet_test_utils::utils::{
     build_deploy_account_tx, build_oz_account_factory, build_single_owner_account, AccountActions,
 };
-use starknet_rpc_test::Transaction;
+use starknet_test_utils::Transaction;
 
 #[rstest]
 #[tokio::test]
@@ -30,10 +27,7 @@ async fn fail_non_existing_block(madara: &ThreadSafeMadaraClient) -> Result<(), 
 
     assert_matches!(
         rpc.get_block_with_txs(BlockId::Hash(FieldElement::ZERO)).await.err(),
-        Some(ProviderError::StarknetError(StarknetErrorWithMessage {
-            message: _,
-            code: MaybeUnknownErrorCode::Known(StarknetError::BlockNotFound)
-        }))
+        Some(ProviderError::StarknetError(StarknetError::BlockNotFound))
     );
 
     Ok(())
@@ -78,7 +72,61 @@ async fn works_with_invoke_txn(madara: &ThreadSafeMadaraClient) -> Result<(), an
         tx.calldata,
         vec![
             FieldElement::ONE,
-            FieldElement::from_hex_be(FEE_TOKEN_ADDRESS).unwrap(),
+            FieldElement::from_hex_be(ETH_FEE_TOKEN_ADDRESS).unwrap(),
+            get_selector_from_name("transfer").unwrap(),
+            FieldElement::ZERO,
+            FieldElement::THREE,
+            FieldElement::THREE,
+            recipient,
+            FieldElement::ONE,
+            FieldElement::ZERO,
+        ]
+    );
+
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn works_with_pending_invoke_txn(madara: &ThreadSafeMadaraClient) -> Result<(), anyhow::Error> {
+    let rpc = madara.get_starknet_client().await;
+
+    let recipient = FieldElement::from_hex_be("0x123456").unwrap();
+    let (current_nonce, pending_block) = {
+        let mut madara_write_lock = madara.write().await;
+        let account = build_single_owner_account(&rpc, SIGNER_PRIVATE, ARGENT_CONTRACT_ADDRESS, true);
+        let nonce = rpc.get_nonce(BlockId::Tag(BlockTag::Latest), account.address()).await?;
+
+        madara_write_lock
+            .submit_txs(vec![Transaction::Execution(account.transfer_tokens(recipient, FieldElement::ONE, None))])
+            .await;
+
+        let pending_block = match rpc.get_block_with_txs(BlockId::Tag(BlockTag::Pending)).await.unwrap() {
+            MaybePendingBlockWithTxs::Block(_) => {
+                return Err(anyhow!("Expected pending block, got already created block"));
+            }
+            MaybePendingBlockWithTxs::PendingBlock(pending_block) => pending_block,
+        };
+
+        // Create block with pending txs to clear state
+        madara_write_lock.create_block_with_pending_txs().await?;
+
+        (nonce, pending_block)
+    };
+
+    assert_eq!(pending_block.transactions.len(), 1);
+    let tx = match &pending_block.transactions[0] {
+        StarknetTransaction::Invoke(InvokeTransaction::V1(tx)) => tx,
+        _ => return Err(anyhow!("Expected an invoke transaction v1")),
+    };
+    assert_eq!(tx.sender_address, FieldElement::TWO);
+    assert_eq!(tx.nonce, current_nonce);
+    assert_eq!(tx.max_fee, FieldElement::from_hex_be(MAX_FEE_OVERRIDE).unwrap());
+    assert_eq!(
+        tx.calldata,
+        vec![
+            FieldElement::ONE,
+            FieldElement::from_hex_be(ETH_FEE_TOKEN_ADDRESS).unwrap(),
             get_selector_from_name("transfer").unwrap(),
             FieldElement::ZERO,
             FieldElement::THREE,
@@ -129,7 +177,7 @@ async fn works_with_deploy_account_txn(madara: &ThreadSafeMadaraClient) -> Resul
 
     assert_eq!(block.transactions.len(), 1);
     let tx = match &block.transactions[0] {
-        StarknetTransaction::DeployAccount(tx) => tx,
+        StarknetTransaction::DeployAccount(DeployAccountTransaction::V1(tx)) => tx,
         _ => return Err(anyhow!("Expected an deploy transaction v1")),
     };
     assert_eq!(tx.nonce, 0u8.into());
@@ -139,6 +187,65 @@ async fn works_with_deploy_account_txn(madara: &ThreadSafeMadaraClient) -> Resul
     assert_eq!(
         tx.constructor_calldata,
         vec![FieldElement::from_hex_be("0x0566d69d8c99f62bc71118399bab25c1f03719463eab8d6a444cd11ece131616").unwrap(),]
+    );
+
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn works_with_pending_deploy_account_txn(madara: &ThreadSafeMadaraClient) -> Result<(), anyhow::Error> {
+    let rpc = madara.get_starknet_client().await;
+
+    let class_hash = FieldElement::from_hex_be(CAIRO_1_ACCOUNT_CONTRACT_CLASS_HASH).unwrap();
+    let contract_address_salt = FieldElement::ONE;
+    let max_fee = FieldElement::from_hex_be(MAX_FEE_OVERRIDE).unwrap();
+
+    let pending_block = {
+        let mut madara_write_lock = madara.write().await;
+        let oz_factory = build_oz_account_factory(&rpc, "0x12345678", class_hash).await;
+        let account_deploy_txn = build_deploy_account_tx(&oz_factory, FieldElement::ONE);
+
+        let funding_account = build_single_owner_account(&rpc, SIGNER_PRIVATE, ARGENT_CONTRACT_ADDRESS, true);
+        let account_address = account_deploy_txn.address();
+
+        // We execute the funding in a different block, because we have no way to guarantee the tx execution
+        // order once in the mempool
+        madara_write_lock
+            .create_block_with_txs(vec![Transaction::Execution(funding_account.transfer_tokens(
+                account_address,
+                max_fee,
+                None,
+            ))])
+            .await?;
+
+        madara_write_lock.submit_txs(vec![Transaction::AccountDeployment(account_deploy_txn)]).await;
+
+        let pending_block = match rpc.get_block_with_txs(BlockId::Tag(BlockTag::Pending)).await.unwrap() {
+            MaybePendingBlockWithTxs::Block(_) => {
+                return Err(anyhow!("Expected pending block, got already created block"));
+            }
+            MaybePendingBlockWithTxs::PendingBlock(pending_block) => pending_block,
+        };
+
+        // Create block with pending txs to clear state
+        madara_write_lock.create_block_with_pending_txs().await?;
+
+        pending_block
+    };
+
+    assert_eq!(pending_block.transactions.len(), 1);
+    let transaction = match &pending_block.transactions[0] {
+        StarknetTransaction::DeployAccount(DeployAccountTransaction::V1(tx)) => tx,
+        _ => return Err(anyhow!("Expected an deploy transaction v1")),
+    };
+    assert_eq!(transaction.nonce, 0u8.into());
+    assert_eq!(transaction.max_fee, max_fee);
+    assert_eq!(transaction.contract_address_salt, contract_address_salt);
+    assert_eq!(transaction.class_hash, class_hash);
+    assert_eq!(
+        transaction.constructor_calldata,
+        vec![FieldElement::from_hex_be("0x047de619de131463cbf799d321b50c617566dc897d4be614fb3927eacd55d7ad").unwrap()]
     );
 
     Ok(())
@@ -158,8 +265,11 @@ async fn works_with_declare_txn(madara: &ThreadSafeMadaraClient) -> Result<(), a
 
         let account = build_single_owner_account(&rpc, SIGNER_PRIVATE, ARGENT_CONTRACT_ADDRESS, true);
         let nonce = rpc.get_nonce(BlockId::Tag(BlockTag::Latest), account.address()).await?;
-        let (declare_tx, class_hash, compiled_class_hash) = account
-            .declare_contract("./contracts/Counter3/Counter3.sierra.json", "./contracts/Counter3/Counter3.casm.json");
+        let (declare_tx, class_hash, compiled_class_hash) = account.declare_contract(
+            "../starknet-rpc-test/contracts/counter5/counter5.contract_class.json",
+            "../starknet-rpc-test/contracts/counter5/counter5.compiled_contract_class.json",
+            None,
+        );
 
         madara_write_lock.create_block_with_txs(vec![Transaction::Declaration(declare_tx)]).await?;
 
@@ -175,6 +285,55 @@ async fn works_with_declare_txn(madara: &ThreadSafeMadaraClient) -> Result<(), a
     assert_eq!(block.status, BlockStatus::AcceptedOnL2);
     assert_eq!(block.transactions.len(), 1);
     let tx = match &block.transactions[0] {
+        StarknetTransaction::Declare(DeclareTransaction::V2(tx)) => tx,
+        _ => return Err(anyhow!("Expected an declare transaction v2")),
+    };
+    assert_eq!(tx.sender_address, FieldElement::TWO);
+    assert_eq!(tx.nonce, current_nonce);
+    assert_eq!(tx.max_fee, max_fee);
+    assert_eq!(tx.class_hash, class_hash);
+    assert_eq!(tx.compiled_class_hash, compiled_class_hash);
+
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn works_with_pending_declare_txn(madara: &ThreadSafeMadaraClient) -> Result<(), anyhow::Error> {
+    let rpc = madara.get_starknet_client().await;
+
+    // manually setting fee else estimate_fee will be called and it will fail
+    // as the nonce has not been updated yet
+    let max_fee = FieldElement::from_hex_be(MAX_FEE_OVERRIDE).unwrap();
+
+    let (current_nonce, class_hash, compiled_class_hash, pending_block) = {
+        let mut madara_write_lock = madara.write().await;
+
+        let account = build_single_owner_account(&rpc, SIGNER_PRIVATE, ARGENT_CONTRACT_ADDRESS, true);
+        let nonce = rpc.get_nonce(BlockId::Tag(BlockTag::Latest), account.address()).await?;
+        let (declare_tx, class_hash, compiled_class_hash) = account.declare_contract(
+            "../starknet-rpc-test/contracts/counter8/counter8.contract_class.json",
+            "../starknet-rpc-test/contracts/counter8/counter8.compiled_contract_class.json",
+            None,
+        );
+
+        madara_write_lock.submit_txs(vec![Transaction::Declaration(declare_tx)]).await;
+
+        let pending_block = match rpc.get_block_with_txs(BlockId::Tag(BlockTag::Pending)).await.unwrap() {
+            MaybePendingBlockWithTxs::Block(_) => {
+                return Err(anyhow!("Expected pending block, got already created block"));
+            }
+            MaybePendingBlockWithTxs::PendingBlock(pending_block) => pending_block,
+        };
+
+        // Create block with pending txs to clear state
+        madara_write_lock.create_block_with_pending_txs().await?;
+
+        (nonce, class_hash, compiled_class_hash, pending_block)
+    };
+
+    assert_eq!(pending_block.transactions.len(), 1);
+    let tx = match &pending_block.transactions[0] {
         StarknetTransaction::Declare(DeclareTransaction::V2(tx)) => tx,
         _ => return Err(anyhow!("Expected an declare transaction v2")),
     };

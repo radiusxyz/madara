@@ -9,7 +9,8 @@ mod tests;
 
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
-use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction};
+use mc_transaction_pool::decryptor::EncryptorInvokeTransaction;
+use mp_transactions::EncryptedInvokeTransaction;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -22,8 +23,9 @@ use starknet_core::types::{
     BlockHashAndNumber, BlockId, BroadcastedDeclareTransaction, BroadcastedDeployAccountTransaction,
     BroadcastedInvokeTransaction, BroadcastedTransaction, ContractClass, DeclareTransactionResult,
     DeployAccountTransactionResult, EventFilterWithPage, EventsPage, FeeEstimate, FieldElement, FunctionCall,
-    InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingTransactionReceipt,
-    MsgFromL1, SimulatedTransaction, SimulationFlag, StateUpdate, SyncStatusType, Transaction,
+    InvokeTransactionResult, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
+    MaybePendingTransactionReceipt, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
+    SyncStatusType, Transaction, TransactionTrace, TransactionTraceWithHash,
 };
 pub mod types;
 
@@ -71,22 +73,6 @@ pub trait StarknetWriteRpcApi {
         &self,
         declare_transaction: BroadcastedDeclareTransaction,
     ) -> RpcResult<DeclareTransactionResult>;
-
-    // (For testing) Encrypt Invoke Transaction
-    #[method(name = "encryptInvokeTransaction")]
-    fn encrypt_invoke_transaction(
-        &self,
-        invoke_transaction: BroadcastedInvokeTransaction,
-        t: u64, //  Time - The number of calculations for how much time should be taken in VDF
-    ) -> RpcResult<EncryptedInvokeTransactionResult>;
-
-    // (For testing) Decrypt Encrypted Invoke Transaction
-    #[method(name = "decryptEncryptedInvokeTransaction")]
-    async fn decrypt_encrypted_invoke_transaction(
-        &self,
-        encrypted_invoke_transaction: EncryptedInvokeTransaction,
-        decryption_key: Option<String>,
-    ) -> RpcResult<InvokeTransaction>;
 
     /// Add an Encrypted Invoke Transaction to invoke a contract function
     #[method(name = "addEncryptedInvokeTransaction")]
@@ -170,6 +156,7 @@ pub trait StarknetReadRpcApi {
     async fn estimate_fee(
         &self,
         request: Vec<BroadcastedTransaction>,
+        simulation_flags: Vec<SimulationFlagForEstimateFee>,
         block_id: BlockId,
     ) -> RpcResult<Vec<FeeEstimate>>;
 
@@ -183,7 +170,7 @@ pub trait StarknetReadRpcApi {
 
     /// Get the information about the result of executing the requested block
     #[method(name = "getStateUpdate")]
-    fn get_state_update(&self, block_id: BlockId) -> RpcResult<StateUpdate>;
+    fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate>;
 
     /// Returns all events matching the given filter
     #[method(name = "getEvents")]
@@ -199,6 +186,22 @@ pub trait StarknetReadRpcApi {
         &self,
         transaction_hash: FieldElement,
     ) -> RpcResult<MaybePendingTransactionReceipt>;
+
+    /// Returns the encrypted invoke transaction and decryption key.
+    #[method(name = "encryptInvokeTransaction")]
+    fn encrypt_invoke_transaction(
+        &self,
+        invoke_transaction: BroadcastedInvokeTransaction,
+        t: u64,
+    ) -> RpcResult<EncryptedInvokeTransactionResult>;
+
+    /// Decrypts an encrypted invoke transaction and returns the decrypted Invoketransaction.
+    #[method(name = "decryptEncryptedInvokeTransaction")]
+    async fn decrypt_encrypted_invoke_transaction(
+        &self,
+        encrypted_invoke_transaction: EncryptedInvokeTransaction,
+        decryption_key: Option<String>,
+    ) -> RpcResult<EncryptorInvokeTransaction>;
 }
 
 /// Starknet trace rpc interface.
@@ -212,4 +215,12 @@ pub trait StarknetTraceRpcApi {
         transactions: Vec<BroadcastedTransaction>,
         simulation_flags: Vec<SimulationFlag>,
     ) -> RpcResult<Vec<SimulatedTransaction>>;
+
+    #[method(name = "traceBlockTransactions")]
+    /// Returns the execution traces of all transactions included in the given block
+    async fn trace_block_transactions(&self, block_id: BlockId) -> RpcResult<Vec<TransactionTraceWithHash>>;
+
+    #[method(name = "traceTransaction")]
+    /// Returns the execution trace of a transaction
+    async fn trace_transaction(&self, transaction_hash: FieldElement) -> RpcResult<TransactionTrace>;
 }

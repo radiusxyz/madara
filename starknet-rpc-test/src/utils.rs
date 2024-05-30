@@ -1,23 +1,27 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use assert_matches::assert_matches;
 use async_trait::async_trait;
 use starknet_accounts::{
     Account, AccountFactory, Call, ConnectedAccount, Execution, OpenZeppelinAccountFactory, SingleOwnerAccount,
 };
-use starknet_core::chain_id;
 use starknet_core::types::contract::legacy::LegacyContractClass;
 use starknet_core::types::contract::{CompiledClass, SierraClass};
-use starknet_core::types::{BlockId, BlockTag, BroadcastedInvokeTransaction, FieldElement, FunctionCall, MsgToL1};
+use starknet_core::types::{
+    BlockId, BlockTag, BroadcastedInvokeTransaction, FieldElement, FunctionCall, MaybePendingTransactionReceipt,
+    MsgToL1, TransactionReceipt,
+};
 use starknet_core::utils::get_selector_from_name;
-use starknet_providers::jsonrpc::{HttpTransport, JsonRpcClient};
-use starknet_providers::Provider;
+use starknet_providers::jsonrpc::{HttpTransport, HttpTransportError, JsonRpcClient, JsonRpcClientError};
+use starknet_providers::{Provider, ProviderError};
 use starknet_signers::{LocalWallet, SigningKey};
+use starknet_test_utils::constants::{ETH_FEE_TOKEN_ADDRESS, MAX_FEE_OVERRIDE};
 
-use crate::constants::{FEE_TOKEN_ADDRESS, MAX_FEE_OVERRIDE};
+use crate::constants::MADARA_CHAIN_ID;
 use crate::{
-    RpcAccount, RpcOzAccountFactory, TransactionAccountDeployment, TransactionDeclaration, TransactionExecution,
-    TransactionLegacyDeclaration,
+    RpcAccount, RpcOzAccountFactory, SendTransactionError, TransactionAccountDeployment, TransactionDeclaration,
+    TransactionExecution, TransactionLegacyDeclaration, TransactionResult,
 };
 
 pub struct U256 {
@@ -38,7 +42,7 @@ pub fn build_single_owner_account<'a>(
     } else {
         starknet_accounts::ExecutionEncoding::New
     };
-    SingleOwnerAccount::new(rpc, signer, account_address, chain_id::TESTNET, execution_encoding)
+    SingleOwnerAccount::new(rpc, signer, account_address, MADARA_CHAIN_ID, execution_encoding)
 }
 
 pub async fn read_erc20_balance(
@@ -64,7 +68,7 @@ pub async fn build_oz_account_factory<'a>(
     class_hash: FieldElement,
 ) -> RpcOzAccountFactory<'a> {
     let signer = LocalWallet::from(SigningKey::from_secret_scalar(FieldElement::from_hex_be(private_key).unwrap()));
-    OpenZeppelinAccountFactory::new(class_hash, chain_id::TESTNET, signer, rpc).await.unwrap()
+    OpenZeppelinAccountFactory::new(class_hash, MADARA_CHAIN_ID, signer, rpc).await.unwrap()
 }
 
 pub fn build_deploy_account_tx<'a>(
@@ -103,6 +107,7 @@ pub trait AccountActions {
         &self,
         path_to_sierra: &str,
         path_to_casm: &str,
+        nonce: Option<FieldElement>,
     ) -> (TransactionDeclaration, FieldElement, FieldElement);
 
     fn declare_legacy_contract(&self, path_to_compiled_contract: &str) -> (TransactionLegacyDeclaration, FieldElement);
@@ -129,7 +134,7 @@ impl AccountActions for SingleOwnerAccount<&JsonRpcClient<HttpTransport>, LocalW
         transfer_amount: U256,
         nonce: Option<u64>,
     ) -> TransactionExecution {
-        let fee_token_address = FieldElement::from_hex_be(FEE_TOKEN_ADDRESS).unwrap();
+        let fee_token_address = FieldElement::from_hex_be(ETH_FEE_TOKEN_ADDRESS).unwrap();
         self.invoke_contract(
             fee_token_address,
             "transfer",
@@ -168,6 +173,7 @@ impl AccountActions for SingleOwnerAccount<&JsonRpcClient<HttpTransport>, LocalW
         &self,
         path_to_sierra: &str,
         path_to_casm: &str,
+        nonce: Option<FieldElement>,
     ) -> (TransactionDeclaration, FieldElement, FieldElement) {
         let sierra: SierraClass = serde_json::from_reader(
             std::fs::File::open(env!("CARGO_MANIFEST_DIR").to_owned() + "/" + path_to_sierra).unwrap(),
@@ -178,13 +184,14 @@ impl AccountActions for SingleOwnerAccount<&JsonRpcClient<HttpTransport>, LocalW
         )
         .unwrap();
         let compiled_class_hash = casm.class_hash().unwrap();
-        (
-            self.declare(sierra.clone().flatten().unwrap().into(), compiled_class_hash)
-				// starknet-rs calls estimateFee with incorrect version which throws an error
-                .max_fee(FieldElement::from_hex_be(MAX_FEE_OVERRIDE).unwrap()),
-            sierra.class_hash().unwrap(),
-            compiled_class_hash,
-        )
+        // starknet-rs calls estimateFee with incorrect version which throws an error
+        let tx = match nonce {
+            Some(nonce) => self.declare(sierra.clone().flatten().unwrap().into(), compiled_class_hash).nonce(nonce),
+            None => self.declare(sierra.clone().flatten().unwrap().into(), compiled_class_hash),
+        }
+        .max_fee(FieldElement::from_hex_be(MAX_FEE_OVERRIDE).unwrap());
+
+        (tx, sierra.class_hash().unwrap(), compiled_class_hash)
     }
 
     fn declare_legacy_contract(&self, path_to_compiled_contract: &str) -> (TransactionLegacyDeclaration, FieldElement) {
@@ -194,8 +201,8 @@ impl AccountActions for SingleOwnerAccount<&JsonRpcClient<HttpTransport>, LocalW
         .unwrap();
         (
             self.declare_legacy(Arc::new(contract_artifact.clone()))
-			 // starknet-rs calls estimateFee with incorrect version which throws an error
-			 .max_fee(FieldElement::from_hex_be(MAX_FEE_OVERRIDE).unwrap()),
+                // starknet-rs calls estimateFee with incorrect version which throws an error
+                .max_fee(FieldElement::from_hex_be(MAX_FEE_OVERRIDE).unwrap()),
             contract_artifact.class_hash().unwrap(),
         )
     }
@@ -224,4 +231,49 @@ where
     }
 
     panic!("Max poll count exceeded.");
+}
+
+type TransactionReceiptResult = Result<MaybePendingTransactionReceipt, ProviderError>;
+
+pub async fn get_transaction_receipt(
+    rpc: &JsonRpcClient<HttpTransport>,
+    transaction_hash: FieldElement,
+) -> TransactionReceiptResult {
+    // there is a delay between the transaction being available at the client
+    // and the sealing of the block, hence sleeping for 100ms
+    assert_poll(|| async { rpc.get_transaction_receipt(transaction_hash).await.is_ok() }, 100, 20).await;
+
+    rpc.get_transaction_receipt(transaction_hash).await
+}
+
+pub async fn get_contract_address_from_deploy_tx(
+    rpc: &JsonRpcClient<HttpTransport>,
+    tx: Result<TransactionResult, SendTransactionError>,
+) -> Result<FieldElement, ProviderError> {
+    let deploy_tx_hash = assert_matches!(
+        &tx,
+        Ok(TransactionResult::Execution(rpc_response)) => rpc_response.transaction_hash
+    );
+
+    let deploy_tx_receipt = get_transaction_receipt(rpc, deploy_tx_hash).await?;
+
+    let contract_address = assert_matches!(
+        deploy_tx_receipt,
+        MaybePendingTransactionReceipt::Receipt(TransactionReceipt::Invoke(receipt)) => receipt.events[0].data[0]
+    );
+    Ok(contract_address)
+}
+
+pub fn is_good_error_code(error: &ProviderError, code: i64) -> bool {
+    match error {
+        ProviderError::Other(e) => {
+            let json_rpc_err = e.as_any().downcast_ref::<JsonRpcClientError<HttpTransportError>>().unwrap();
+            match json_rpc_err {
+                JsonRpcClientError::JsonRpcError(e) => e.code == code,
+                _ => panic!("wrong error type"),
+            }
+        }
+        ProviderError::StarknetError(_) => true,
+        e => panic!("wrong error type: {e:?}"),
+    }
 }

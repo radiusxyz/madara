@@ -6,11 +6,13 @@ use std::fmt::Debug;
 use anyhow::anyhow;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response};
+use serde::{de, Deserialize, Deserializer};
 use serde_json::json;
 use starknet_accounts::{
     Account, AccountDeployment, AccountError, AccountFactoryError, Declaration, Execution, LegacyDeclaration,
     OpenZeppelinAccountFactory, SingleOwnerAccount,
 };
+use starknet_core::types::contract::legacy::LegacyProgram;
 use starknet_core::types::{DeclareTransactionResult, DeployAccountTransactionResult, InvokeTransactionResult};
 use starknet_providers::jsonrpc::{HttpTransport, JsonRpcClient};
 use starknet_providers::Provider;
@@ -24,6 +26,7 @@ pub mod constants;
 pub mod utils;
 
 pub mod fixtures;
+// mod utils;
 
 const NODE_RPC_URL: &str = "http://localhost:9944";
 
@@ -148,9 +151,17 @@ impl MadaraClient {
     }
 
     pub async fn create_empty_block(&mut self) -> anyhow::Result<()> {
+        self.do_create_block(true, true).await
+    }
+
+    pub async fn create_block_with_pending_txs(&mut self) -> anyhow::Result<()> {
+        self.do_create_block(true, true).await
+    }
+
+    async fn do_create_block(&mut self, empty: bool, finalize: bool) -> anyhow::Result<()> {
         let body = json!({
             "method": "engine_createBlock",
-            "params": [true, true],
+            "params": [empty, finalize],
         });
 
         let response = self.call_rpc(body).await?;
@@ -162,20 +173,26 @@ impl MadaraClient {
         &mut self,
         transactions: Vec<Transaction<'_>>,
     ) -> anyhow::Result<Vec<Result<TransactionResult, SendTransactionError>>> {
-        let body = json!({
-            "method": "engine_createBlock",
-            "params": [false, true],
-        });
-
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(transactions.len());
         for tx in transactions {
             let result = tx.send().await;
             results.push(result);
         }
 
-        let response = self.call_rpc(body).await?;
-        // TODO: read actual error from response
-        response.status().is_success().then_some(results).ok_or(anyhow!("failed to create a new block"))
+        self.do_create_block(true, false).await?;
+        Ok(results)
+    }
+
+    pub async fn submit_txs(
+        &mut self,
+        transactions: Vec<Transaction<'_>>,
+    ) -> Vec<Result<TransactionResult, SendTransactionError>> {
+        let mut results = Vec::with_capacity(transactions.len());
+        for tx in transactions {
+            let result = tx.send().await;
+            results.push(result);
+        }
+        results
     }
 
     pub async fn create_block_with_parent(&mut self, parent_hash: &str) -> anyhow::Result<()> {
@@ -197,5 +214,31 @@ impl MadaraClient {
         let response = self.call_rpc(body).await?;
 
         Ok(response.status().is_success())
+    }
+}
+
+pub struct LegacyProgramWrapper {
+    pub legacy_program: LegacyProgram,
+}
+
+impl<'de> Deserialize<'de> for LegacyProgramWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // Ensure the required fields are present in the JSON data
+        let mut json_obj = value.as_object().ok_or_else(|| de::Error::custom("Expected JSON object"))?.clone();
+
+        // If 'main_scope' field is missing, set it to the default value
+        if !json_obj.contains_key("main_scope") {
+            json_obj.insert("main_scope".to_string(), serde_json::Value::String("__main__".to_string()));
+        }
+
+        // Deserialize the modified JSON data into LegacyProgram
+        let legacy_program = serde_json::from_value(serde_json::Value::Object(json_obj)).map_err(de::Error::custom)?;
+
+        Ok(LegacyProgramWrapper { legacy_program })
     }
 }

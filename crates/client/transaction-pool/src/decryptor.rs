@@ -2,13 +2,16 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use blockifier::transaction::transactions::InvokeTransaction;
 use encryptor::SequencerPoseidonEncryption;
 use jsonrpsee::core::client::ClientT;
 use jsonrpsee::core::params::ObjectParams;
 use jsonrpsee::ws_client::WsClientBuilder;
 use mc_config::config_map;
-use mp_transactions::{EncryptedInvokeTransaction, InvokeTransaction};
+use mp_transactions::EncryptedInvokeTransaction;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use starknet_api::transaction::TransactionHash;
 
 use crate::error::{Error, Result};
 use crate::vdf::Vdf;
@@ -43,7 +46,7 @@ impl Decryptor {
         &self,
         encrypted_invoke_transaction: EncryptedInvokeTransaction,
         decryption_key: Option<String>,
-    ) -> Result<InvokeTransaction> {
+    ) -> Result<EncryptorInvokeTransaction> {
         log::debug!("Decrypting encrypted invoke transaction... using internal decryptor");
         let decryption_key = decryption_key.unwrap_or_else(|| {
             // 2. Use naive
@@ -62,18 +65,19 @@ impl Decryptor {
             &symmetric_key,
             encrypted_invoke_transaction.nonce,
         );
-        let decrypted_invoke_tx =
+        let decrypted_invoke_tx_string =
             String::from_utf8(decrypted_invoke_tx).map_err(|e| Error::RuntimeApi(e.to_string()))?;
-        let trimmed_decrypted_invoke_tx = decrypted_invoke_tx.trim_end_matches('\0');
+        let trimmed_decrypted_invoke_tx_str = decrypted_invoke_tx_string.trim_end_matches('\0');
 
-        serde_json::from_str(trimmed_decrypted_invoke_tx).map_err(Error::Serialization)
+        serde_json::from_str::<EncryptorInvokeTransaction>(trimmed_decrypted_invoke_tx_str)
+            .map_err(Error::Serialization)
     }
 
     /// Delegate to decrypt encrypted invoke transaction
     pub async fn delegate_to_decrypt_encrypted_invoke_transaction(
         self,
         encrypted_invoke_transaction: EncryptedInvokeTransaction,
-    ) -> Result<InvokeTransaction> {
+    ) -> Result<EncryptorInvokeTransaction> {
         let index = CURRENT_INDEX.load(Ordering::SeqCst);
 
         let config_map = config_map();
@@ -112,6 +116,23 @@ impl Decryptor {
         let response: String =
             client.request("decrypt_transaction", params).await.map_err(|e| Error::RuntimeApi(e.to_string()))?;
 
-        serde_json::from_str(response.as_str()).map_err(Error::Serialization)
+        serde_json::from_str::<EncryptorInvokeTransaction>(response.as_str()).map_err(Error::Serialization)
+    }
+}
+
+/// Decrypted invoke transaction
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct EncryptorInvokeTransaction {
+    /// Starknet invoke transaction
+    pub tx: starknet_api::transaction::InvokeTransaction,
+    /// Transaction hash
+    pub tx_hash: TransactionHash,
+    /// Indicates the presence of the only_query bit in the version.
+    pub only_query: bool,
+}
+
+impl From<EncryptorInvokeTransaction> for InvokeTransaction {
+    fn from(transaction: EncryptorInvokeTransaction) -> Self {
+        Self { tx: transaction.tx, tx_hash: transaction.tx_hash, only_query: transaction.only_query }
     }
 }

@@ -17,58 +17,47 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 # Madara utils
-mc-genesis-data-provider = { workspace = true }
-# Madara runtime
-pallet-starknet = { workspace = true, default-features = true }
-pallet-starknet-runtime-api = { workspace = true, default-features = true }
-# Madara client
 mc-db = { workspace = true }
+mc-genesis-data-provider = { workspace = true }
 mc-rpc-core = { workspace = true }
 mc-storage = { workspace = true }
 mc-transaction-pool = { workspace = true }
-# Substate primitives
-frame-support = { workspace = true }
-frame-system = { workspace = true }
+pallet-starknet-runtime-api = { workspace = true }
 sc-transaction-pool = { workspace = true }
 sc-transaction-pool-api = { workspace = true }
-sp-api = { workspace = true, default-features = true }
-sp-arithmetic = { workspace = true, default-features = true }
-sp-blockchain = { workspace = true, default-features = true }
-sp-core = { workspace = true, default-features = true }
-sp-runtime = { workspace = true, default-features = true }
+sp-api = { workspace = true }
+sp-arithmetic = { workspace = true }
+sp-blockchain = { workspace = true }
+sp-core = { workspace = true }
+sp-runtime = { workspace = true }
+sp-timestamp = { workspace = true }
+
 # Substrate client
-sc-client-api = { workspace = true, default-features = true }
+sc-client-api = { workspace = true }
 sc-network-sync = { workspace = true }
+
 # Starknet
-blockifier = { workspace = true, default-features = true }
+blockifier = { workspace = true }
+cairo-vm = { workspace = true }
+jsonrpsee = { workspace = true, features = ["server", "macros"] }
+log = { workspace = true }
+mp-block = { workspace = true }
+mp-felt = { workspace = true }
+mp-hashers = { workspace = true }
+mp-simulations = { workspace = true }
+mp-transactions = { workspace = true, features = ["client"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
 starknet-core = { workspace = true }
 starknet-ff = { workspace = true }
-starknet_api = { workspace = true, default-features = true }
-# Others
-anyhow = { workspace = true }
-hex = { workspace = true, default-features = true }
-itertools = { workspace = true }
-jsonrpsee = { workspace = true, default-features = true, features = [
-  "server",
-  "macros",
-] }
-log = { workspace = true, default-features = true }
-mp-transactions = { workspace = true, features = ["client", "serde"] }
-mp-block = { workspace = true, default-features = true }
-mp-fee = { workspace = true, default-features = true }
-mp-felt = { workspace = true, default-features = true }
-mp-hashers = { workspace = true, default-features = true }
-mp-simulations = { workspace = true }
-serde_json = { workspace = true, default-features = true }
+starknet_api = { workspace = true }
 thiserror = { workspace = true }
-starknet-crypto = { workspace = true, default-features = false, features = [
-  "alloc",
-] }
+starknet-crypto = { workspace = true, features = ["alloc"] }
 mc-config = { workspace = true }
-tokio = { workspace = true, default-features = true, features = ["time"] }
+
 # Encrypted mempool
 rand = "0.8"
-num-bigint = { workspace = true, default-features = false }
+num-bigint = { workspace = true }
 encryptor = { git = "https://github.com/radiusxyz/encryptor" }
 
 [dev-dependencies]
