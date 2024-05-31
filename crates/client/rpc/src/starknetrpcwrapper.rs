@@ -9,7 +9,7 @@ pub use mc_rpc_core::{
     Felt, MadaraRpcApiServer, PredeployedAccountWithBalance, StarknetReadRpcApiServer, StarknetTraceRpcApiServer,
     StarknetWriteRpcApiServer,
 };
-use mc_transaction_pool::decryptor::EncryptorInvokeTransaction;
+use mc_transaction_pool::decryptor::{DecryptedInvokeTransaction, EncryptorInvokeTransaction};
 use mc_transaction_pool::{ChainApi, EncryptedTransactionPool};
 use mp_hashers::HasherT;
 use mp_transactions::{EncryptedInvokeTransaction, TransactionStatus};
@@ -540,12 +540,12 @@ where
         self.0.encrypt_invoke_transaction(invoke_transaction, t)
     }
 
-    async fn decrypt_encrypted_invoke_transaction(
+    fn decrypt_encrypted_invoke_transaction(
         &self,
         encrypted_invoke_transaction: EncryptedInvokeTransaction,
         decryption_key: Option<String>,
     ) -> RpcResult<EncryptorInvokeTransaction> {
-        self.0.decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, decryption_key).await
+        self.0.decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, decryption_key)
     }
 }
 
@@ -617,6 +617,14 @@ where
         encrypted_invoke_transaction: EncryptedInvokeTransaction,
     ) -> RpcResult<EncryptedMempoolTransactionResult> {
         self.0.add_encrypted_invoke_transaction(encrypted_invoke_transaction).await
+    }
+
+    /// Add a Decrypted Invoke Transaction to invoke a contract function
+    async fn add_decrypted_invoke_transaction(
+        &self,
+        decrypted_tx: DecryptedInvokeTransaction,
+    ) -> RpcResult<InvokeTransactionResult> {
+        self.0.add_decrypted_invoke_transaction(decrypted_tx).await
     }
 
     /// Allow a client to pass the decryption key, after the client received the order_commitment

@@ -17,7 +17,7 @@ pub struct BlockEncryptedTransactionPool {
     encrypted_transaction_pool: HashMap<u64, EncryptedInvokeTransaction>,
 
     /// store decryption keys.
-    decryption_keys: HashSet<u64>,
+    pub decryption_keys: HashSet<u64>,
 
     /// current order
     order: u64, // decrypted_tx_count + raw_tx_count
@@ -48,12 +48,10 @@ impl BlockEncryptedTransactionPool {
 
     /// add encrypted tx to EncryptedTransactionBlock
     pub fn add_encrypted_invoke_tx(&mut self, encrypted_invoke_transaction: EncryptedInvokeTransaction) -> u64 {
-        let order = self.order;
-
         self.encrypted_transaction_pool.insert(self.order, encrypted_invoke_transaction);
         self.order += 1;
 
-        order
+        self.order.clone()
     }
 
     /// get encrypted tx for order
@@ -117,9 +115,13 @@ impl BlockEncryptedTransactionPool {
         self.decrypted_tx_count + self.raw_tx_count
     }
 
-    /// provide decryption key
-    pub fn provide_decryption_key(&mut self, order: u64) -> bool {
-        self.decryption_keys.insert(order)
+    /// update key received information
+    pub fn update_decryption_key(&mut self, order: u64) -> Result<()> {
+        if !self.decryption_keys.insert(order) {
+            return Err(Error::Retrieval(format!("Already received decryption key on {order:?}.")));
+        }
+
+        Ok(())
     }
 
     /// delete invalid encrypted tx
@@ -135,14 +137,14 @@ impl BlockEncryptedTransactionPool {
         log::info!("Delete encrypted tx on {order:?}.");
     }
 
-    /// is provided decryption key
-    pub fn is_provided_decryption_key(&self, order: u64) -> bool {
+    /// get key received information
+    pub fn is_decryption_key_recieved(&self, order: u64) -> bool {
         self.decryption_keys.contains(&order)
     }
 }
 
 /// encrypted_mempool
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Debug, Default)]
 /// EncryptedPool struct
 /// 1 encrypted_mempool for node
 /// * `txs`: Map of Txs, key:value = block_height:Txs
@@ -150,7 +152,7 @@ impl BlockEncryptedTransactionPool {
 ///   removed.
 pub struct EncryptedMemPool {
     /// Map of Txs, key:value = block_height:Txs
-    encrypted_transaction_pool_blocks: HashMap<u64, BlockEncryptedTransactionPool>,
+    pub encrypted_transaction_pool_blocks: HashMap<u64, BlockEncryptedTransactionPool>,
 
     /// encrypted_mempool enabler. if whole part is splitted by package. it have to be removed.
     enabled: bool,

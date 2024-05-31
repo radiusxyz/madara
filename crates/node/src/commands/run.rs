@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::ValueHint::FilePath;
-use madara_runtime::SealingMode;
+use madara_runtime::{Builder, SealingMode};
 use mc_config::init_config;
 use sc_cli::{Result, RpcMethods, RunCmd, SubstrateCli};
 use sc_service::BasePath;
@@ -92,6 +92,21 @@ pub fn run_node(mut cli: Cli) -> Result<()> {
     };
 
     init_config(&madara_path);
+
+    // init process builder
+    Builder::default()
+        // Register RPC methods.
+        .set_rpc_endpoint("127.0.0.1:8000".to_string())
+        // Set the number of async threads for IO-bound tasks.
+        .set_async_thread(1) // default = 1
+        // Set the number of processes a sequencer can spawn.
+        .set_process_count(2) // default = 2
+        // Set the number of worker threads for CPU-bound tasks.
+        .set_worker_thread(1) // default = 1
+        // Set the size of the worker queue to which CPU-bound tasks are passed.
+        .set_work_queue_capacity(3) //  default = 3
+        // Finalize.
+        .init();
 
     if cli.run.base.shared_params.dev {
         override_dev_environment(&mut cli.run);

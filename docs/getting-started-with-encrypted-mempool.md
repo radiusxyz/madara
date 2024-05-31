@@ -17,7 +17,7 @@ You first need to setup up the node, which means you need to load the genesis
 state into your file system.
 
 ```sh
-cargo run --release -- setup --chain=dev --from-remote
+cargo run --bin madara --release -- setup --chain=dev --from-remote
 ```
 
 Now, you can start the node in development mode with encrypted mempool
@@ -27,7 +27,7 @@ This activates the encrypted mempool functionality, allowing the node to handle 
 
 ```sh
 # Start the node in development mode with encrypted mempool
-cargo run --release -- --dev --encrypted-mempool
+cargo run --bin madara --release -- --dev --encrypted-mempool
 ```
 
 ### Encrypted Mempool
