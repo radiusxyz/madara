@@ -23,6 +23,8 @@ use encryptor::SequencerPoseidonEncryption;
 use errors::StarknetRpcApiError;
 use jsonrpsee::core::{async_trait, RpcResult};
 use log::error;
+use madara_runtime::interface::try_wait_kill_process;
+use madara_runtime::spawn_process;
 use mc_genesis_data_provider::GenesisProvider;
 use mc_rpc_core::types::{
     DecryptionInfo, EncryptedInvokeTransactionResult, EncryptedMempoolTransactionResult, ProvideDecryptionKeyResult,
@@ -33,7 +35,9 @@ pub use mc_rpc_core::{
     StarknetWriteRpcApiServer,
 };
 use mc_storage::OverrideHandle;
-use mc_transaction_pool::decryptor::{Decryptor, EncryptorInvokeTransaction};
+use mc_transaction_pool::decryptor::{
+    DecryptEncryptedTransaction, DecryptedInvokeTransaction, Decryptor, EncryptorInvokeTransaction,
+};
 use mc_transaction_pool::vdf::{ReturnData, Vdf};
 use mc_transaction_pool::{ChainApi, EncryptedTransactionPool, Pool};
 use mp_block::BlockTransactions;
@@ -477,7 +481,13 @@ where
         let encrypted_mempool = self.pool.encrypted_mempool();
         let mut block_height = self.current_block_number()?;
 
-        let order = {
+        let encrypted_invoke_transaction_string = serde_json::to_string(&encrypted_invoke_transaction)?;
+        let encrypted_invoke_transaction_bytes = encrypted_invoke_transaction_string.as_bytes();
+        let encrypted_tx_info_hash = PedersenHasher::hash_bytes(encrypted_invoke_transaction_bytes);
+
+        let order;
+        let signature;
+        {
             let mut locked_encrypted_mempool = encrypted_mempool.lock().await;
 
             if !locked_encrypted_mempool.is_using_encrypted_mempool() {
@@ -494,22 +504,69 @@ where
                     locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(block_height);
             }
 
-            block_transaction_pool.add_encrypted_invoke_tx(encrypted_invoke_transaction.clone())
+            order = block_transaction_pool.get_order();
+            let pid = format!("{}_{}", &block_height, order);
+            let argment = DecryptEncryptedTransaction::new(block_height, order, encrypted_invoke_transaction.clone());
+            log::debug!("spawn_process {:?}", pid);
+            spawn_process("decryptor", pid, argment).await.map_err(|error| {
+                error!("Failed to spawn process: {error}");
+                StarknetRpcApiError::InternalServerError
+            })?;
+
+            block_transaction_pool.add_encrypted_invoke_tx(encrypted_invoke_transaction.clone());
+
+            let message = format!("{},{},{}", block_height, order, encrypted_tx_info_hash.0.to_string());
+            signature = sign_message(message)?;
         };
 
-        let encrypted_invoke_transaction_string = serde_json::to_string(&encrypted_invoke_transaction)?;
-        let encrypted_invoke_transaction_bytes = encrypted_invoke_transaction_string.as_bytes();
-        let encrypted_tx_info_hash = PedersenHasher::hash_bytes(encrypted_invoke_transaction_bytes);
-        let message = format!("{},{},{}", block_height, order, encrypted_tx_info_hash.0.to_string());
-
-        let signature = sign_message(message)?;
-
         Ok(EncryptedMempoolTransactionResult { block_number: block_height, order, signature })
+    }
+
+    /// Add an Decrypted Invoke Transaction to invoke a contract function
+    ///
+    /// # Arguments
+    ///
+    /// * `invoke tx` - <https://docs.starknet.io/documentation/architecture_and_concepts/Blocks/transactions/#invoke_transaction>
+    ///
+    /// # Returns
+    ///
+    /// * `transaction_hash` - transaction hash corresponding to the invocation
+    async fn add_decrypted_invoke_transaction(
+        &self,
+        decrypted_tx: DecryptedInvokeTransaction,
+    ) -> RpcResult<InvokeTransactionResult> {
+        let best_block_hash = self.client.info().best_hash;
+
+        {
+            let encrypted_mempool = self.pool.encrypted_mempool().clone();
+            let mut locked_encrypted_mempool = encrypted_mempool.lock().await;
+
+            if locked_encrypted_mempool.is_using_encrypted_mempool() {
+                let block_height = decrypted_tx.block_height;
+                let block_encrypted_transaction_pool =
+                    locked_encrypted_mempool.get_or_init_block_encrypted_transaction_pool(block_height);
+                block_encrypted_transaction_pool.update_decryption_key(decrypted_tx.order).map_err(|error| {
+                    error!("Failed to update decryption keys: {error}");
+                    StarknetRpcApiError::InternalServerError
+                })?;
+            }
+        }
+
+        let order = decrypted_tx.order;
+        let tx_hash = decrypted_tx.invoke_transaction.tx_hash.clone();
+
+        let transaction = AccountTransaction::Invoke(decrypted_tx.invoke_transaction.into());
+        let extrinsic = self.convert_tx_to_extrinsic(best_block_hash, transaction)?;
+
+        submit_extrinsic_with_order(self.pool.clone(), best_block_hash, extrinsic, order).await?;
+
+        Ok(InvokeTransactionResult { transaction_hash: Felt252Wrapper::from(*tx_hash).into() })
     }
 
     async fn provide_decryption_key(&self, decryption_info: DecryptionInfo) -> RpcResult<ProvideDecryptionKeyResult> {
         let encrypted_mempool = self.pool.encrypted_mempool().clone();
         let block_height = decryption_info.block_number;
+        let order = decryption_info.order;
 
         let encrypted_invoke_transaction = {
             let mut locked_encrypted_mempool = encrypted_mempool.lock().await;
@@ -519,10 +576,15 @@ where
             }
 
             let block_transaction_pool =
-                locked_encrypted_mempool.get_mut_block_encrypted_transaction_pool(&block_height).ok_or({
-                    error!("Failed to get block transaction pool for block height: {block_height}");
-                    StarknetRpcApiError::InternalServerError
-                })?;
+                locked_encrypted_mempool.get_mut_block_encrypted_transaction_pool(&block_height).unwrap();
+
+            let pid = format!("{}_{}", &block_height, order);
+            try_wait_kill_process(pid.clone()).await.map_err(|error| {
+                error!("Failed to kill process: {error}");
+                StarknetRpcApiError::InternalServerError
+            })?;
+
+            log::debug!("Killed existing decryption process: {pid}");
 
             let encrypted_invoke_transaction = block_transaction_pool
                 .get_encrypted_invoke_tx(decryption_info.order)
@@ -535,11 +597,10 @@ where
                 })?
                 .clone();
 
-            if !block_transaction_pool.provide_decryption_key(decryption_info.order) {
-                log::error! {
-                "Failed to provide decryption key (block number: {block_height}, order: {}). The decryption key is already provided.", decryption_info.order};
-                return Err(StarknetRpcApiError::InternalServerError.into());
-            }
+            block_transaction_pool.update_decryption_key(decryption_info.order).map_err(|error| {
+                error!("Failed to update decryption keys: {error}");
+                StarknetRpcApiError::InternalServerError
+            })?;
 
             encrypted_invoke_transaction
         };
@@ -560,12 +621,8 @@ where
             FieldElement::from(decryption_info.signature[1]),
         ) {
             true => {
-                let invoke_tx = Decryptor::default()
-                    .decrypt_encrypted_invoke_transaction(
-                        encrypted_invoke_transaction,
-                        Some(decryption_info.decryption_key),
-                    )
-                    .await
+                let invoke_tx = Decryptor::new(encrypted_invoke_transaction)
+                    .decrypt_encrypted_invoke_transaction(Some(decryption_info.decryption_key))
                     .map_err(|e| {
                         error!("Failed to decrypt encrypted invoke transaction: {e}");
                         StarknetRpcApiError::InternalServerError
@@ -1569,18 +1626,17 @@ where
         })
     }
 
-    async fn decrypt_encrypted_invoke_transaction(
+    fn decrypt_encrypted_invoke_transaction(
         &self,
         encrypted_invoke_transaction: EncryptedInvokeTransaction,
         decryption_key: Option<String>,
     ) -> RpcResult<EncryptorInvokeTransaction> {
-        Decryptor::default()
-            .decrypt_encrypted_invoke_transaction(encrypted_invoke_transaction, decryption_key)
-            .await
-            .map_err(|e| {
-                error!("{e}");
+        Decryptor::new(encrypted_invoke_transaction).decrypt_encrypted_invoke_transaction(decryption_key).map_err(
+            |error| {
+                error!("Failed to decrypt encrypted invoke transaction - {error}");
                 StarknetRpcApiError::InternalServerError.into()
-            })
+            },
+        )
     }
 }
 

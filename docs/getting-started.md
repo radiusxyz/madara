@@ -19,13 +19,13 @@ You first need to setup up the node, which means you need to load the genesis
 state into your file system.
 
 ```sh
-cargo run --release -- setup --chain=dev --from-remote
+cargo run --bin madara --release -- setup --chain=dev --from-remote
 ```
 
 Now, you can start the node in development mode
 
 ```sh
-cargo run --release -- --dev
+cargo run --bin madara --release -- --dev --encrypted-mempool
 ```
 
 ### Interacting with the node
@@ -58,9 +58,9 @@ The node also supports to use manual seal (to produce block manually through
 RPC).
 
 ```sh
-cargo run --release -- --dev --sealing=manual
+cargo run --bin madara --release -- --dev --sealing=manual
 # Or
-cargo run --release -- --dev --sealing=instant
+cargo run --bin madara --release -- --dev --sealing=instant
 ```
 
 Log level can be specified with `-l` flag. For example, `-ldebug` will show
@@ -68,7 +68,7 @@ debug logs. It can also be specified via the `RUST_LOG` environment variable.
 For example:
 
 ```sh
-RUSTLOG=runtime=info cargo run --release -- --dev
+RUSTLOG=runtime=info cargo run --bin madara --release -- --dev
 ```
 
 ### Using Nix (optional, only for degens)
@@ -101,9 +101,9 @@ Build custom chain spec:
 
 ```bash
 # Build plain chain spec
-cargo run --release -- build-spec --chain local > chain-specs/madara-local-testnet-plain.json
+cargo run --bin madara --release -- build-spec --chain local > chain-specs/madara-local-testnet-plain.json
 # Build final raw chain spec
-cargo run --release -- build-spec --chain chain-specs/madara-local-testnet-plain.json --raw > chain-specs/madara-local-testnet.json
+cargo run --bin madara --release -- build-spec --chain chain-specs/madara-local-testnet-plain.json --raw > chain-specs/madara-local-testnet.json
 ```
 
 See more details about
@@ -116,7 +116,7 @@ To test the Madara RPC endpoints, follow the steps below:
 Run Madara locally (by default, it runs on port 9944):
 
 ```bash
-cargo run --release -- --dev
+cargo run --bin madara --release -- --dev
 # Alternatively, use other methods to run Madara
 ```
 

@@ -14,6 +14,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 async-trait = { workspace = true }
+madara-runtime = { workspace = true }
 futures = { workspace = true }
 futures-timer = { workspace = true }
 linked-hash-map = { workspace = true }
@@ -34,6 +35,7 @@ sp-runtime = { workspace = true }
 sp-tracing = { workspace = true }
 sp-transaction-pool = { workspace = true }
 thiserror = { workspace = true }
+reqwest = { workspace = true }
 starknet_api = { workspace = true }
 blockifier = { workspace = true }
 

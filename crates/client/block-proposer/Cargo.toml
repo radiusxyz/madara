@@ -16,6 +16,7 @@ repository = "https://github.com/keep-starknet-strange/madara"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
+async-std = { version = "1.12.0" }
 codec = { package = "parity-scale-codec", version = "3.2.2" }
 futures = { workspace = true }
 futures-timer = { workspace = true }

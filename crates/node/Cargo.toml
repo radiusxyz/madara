@@ -134,3 +134,8 @@ sn-block-import = ["dep:mc-starknet-block-import"]
 sn-block-import-testing = ["sn-block-import"]
 # Enables dev features to improve DevX
 dev = ["madara-runtime/dev"]
+
+
+[[bin]]
+name = "decryptor"
+path = "src/decryptor.rs"

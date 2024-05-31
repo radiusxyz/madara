@@ -17,6 +17,14 @@ mod pallets;
 mod runtime_tests;
 mod types;
 
+pub mod async_runtime;
+pub mod context;
+pub mod error;
+pub mod error_impl;
+pub mod interface;
+pub mod subprocess;
+pub mod thread_pool;
+
 use blockifier::context::FeeTokenAddresses;
 use blockifier::execution::contract_class::ContractClass;
 use blockifier::state::cached_state::CommitmentStateDiff;
@@ -32,6 +40,7 @@ pub use frame_support::weights::constants::{
 pub use frame_support::weights::{IdentityFee, Weight};
 pub use frame_support::{construct_runtime, parameter_types, StorageValue};
 pub use frame_system::Call as SystemCall;
+pub use interface::*;
 use mp_felt::Felt252Wrapper;
 use mp_simulations::{
     FeeEstimate, InternalSubstrateError, ReExecutionResult, SimulationError, SimulationFlags,
@@ -44,6 +53,7 @@ pub use pallet_starknet;
 use pallet_starknet::Call::{consume_l1_message, declare, deploy_account, invoke};
 pub use pallet_starknet::DefaultChainId;
 pub use pallet_timestamp::Call as TimestampCall;
+pub use paste;
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::crypto::KeyTypeId;
@@ -60,6 +70,7 @@ use starknet_api::core::{ClassHash, ContractAddress, EntryPointSelector, Nonce};
 use starknet_api::hash::StarkFelt;
 use starknet_api::state::StorageKey;
 use starknet_api::transaction::{Calldata, Event as StarknetEvent, MessageToL1, TransactionHash};
+pub use subprocess::{run_process, SubProcess};
 /// Import the types.
 pub use types::*;
 // For `format!`

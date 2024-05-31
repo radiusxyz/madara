@@ -16,6 +16,7 @@ use serde_with::serde_as;
 
 pub mod utils;
 
+use mc_transaction_pool::decryptor::DecryptedInvokeTransaction;
 use mp_transactions::TransactionStatus;
 use pallet_starknet::genesis_loader::PredeployedAccount;
 use starknet_core::serde::unsigned_field_element::UfeHex;
@@ -27,6 +28,7 @@ use starknet_core::types::{
     MaybePendingTransactionReceipt, MsgFromL1, SimulatedTransaction, SimulationFlag, SimulationFlagForEstimateFee,
     SyncStatusType, Transaction, TransactionTrace, TransactionTraceWithHash,
 };
+
 pub mod types;
 
 use crate::types::{
@@ -80,6 +82,10 @@ pub trait StarknetWriteRpcApi {
         &self,
         encrypted_invoke_transaction: EncryptedInvokeTransaction,
     ) -> RpcResult<EncryptedMempoolTransactionResult>;
+
+    /// Add a Decrypted Invoke Transaction to invoke a contract function
+    #[method(name = "addDecryptedInvokeTransaction")]
+    async fn add_decrypted_invoke_transaction(&self, decrypted_tx: DecryptedInvokeTransaction) -> RpcResult<InvokeTransactionResult>;
 
     /// Allow a client to pass the decryption key, after the client received the order_commitment
     /// from sequencer.
@@ -197,7 +203,7 @@ pub trait StarknetReadRpcApi {
 
     /// Decrypts an encrypted invoke transaction and returns the decrypted Invoketransaction.
     #[method(name = "decryptEncryptedInvokeTransaction")]
-    async fn decrypt_encrypted_invoke_transaction(
+    fn decrypt_encrypted_invoke_transaction(
         &self,
         encrypted_invoke_transaction: EncryptedInvokeTransaction,
         decryption_key: Option<String>,
